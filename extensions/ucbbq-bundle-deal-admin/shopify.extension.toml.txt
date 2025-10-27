@@ -1,0 +1,6 @@
+name = "Uncle Clarence Bundle Deal – Admin UI"
+type = "ui_extension"
+
+[[targets]]
+target = "discounts.app_configuration.render"
+module = "./src/index.jsx"

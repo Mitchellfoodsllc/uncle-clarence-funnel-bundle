@@ -1,0 +1,20 @@
+api_version = "2025-04"
+
+[[extensions]]
+name = "Uncle Clarence Bundle Deal"
+handle = "ucbbq-bundle-deal"
+
+uid = "efc1a954-26bf-792f-21f3-a9d7dddf96eb15af8c01"
+
+type = "function"
+description = "Cart lines combo discount: 3% off sauce when a rub is in cart"
+
+  [[extensions.targeting]]
+  # Cart Lines Discount (this is the one we want)
+  target = "cart.lines.discounts.generate.run"
+  input_query = "src/cart_lines_discounts_generate_run.graphql"
+export = "cart-lines-discounts-generate-run"
+
+  [extensions.build]
+  command = ""
+  path = "dist/function.wasm"

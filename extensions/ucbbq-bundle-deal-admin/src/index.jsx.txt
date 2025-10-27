@@ -1,0 +1,95 @@
+function App() {
+  const { i18n } = useApi();
+  const { settings, setSettings, isSaving } = useSettings();
+
+  const percent1 = settings.percent1 ?? 3;
+  const percent2 = settings.percent2 ?? 6;
+  const tier2SauceMin = settings.tier2SauceMin ?? 2;
+  const tier2RubMin = settings.tier2RubMin ?? 1;
+
+  const sauceCollections = settings.sauceCollections ?? [];
+  const rubCollections   = settings.rubCollections ?? [];
+
+  const update = (patch) => setSettings({ ...settings, ...patch });
+
+  return (
+    <BlockStack spacing="large">
+      <Heading>Uncle Clarence Bundle Deal</Heading>
+      <Text>
+        Tiered combo discount. When at least one <b>Rub</b> and one <b>Sauce</b> item are in cart,
+        apply Tier 1. If quantities hit Tier 2 thresholds, apply a higher percent.
+      </Text>
+
+      <Divider />
+
+      <Heading level={2}>Tiers</Heading>
+      <BlockStack spacing="base">
+        <NumberField
+          label="Tier 1 percent"
+          value={String(percent1)}
+          onChange={(v) => update({ percent1: clampPct(v) })}
+          suffix="%"
+        />
+        <Box />
+        <NumberField
+          label="Tier 2 percent"
+          value={String(percent2)}
+          onChange={(v) => update({ percent2: clampPct(v) })}
+          suffix="%"
+        />
+        <NumberField
+          label="Tier 2 Sauce minimum (qty)"
+          value={String(tier2SauceMin)}
+          onChange={(v) => update({ tier2SauceMin: clampInt(v, 1, 999) })}
+        />
+        <NumberField
+          label="Tier 2 Rub minimum (qty)"
+          value={String(tier2RubMin)}
+          onChange={(v) => update({ tier2RubMin: clampInt(v, 1, 999) })}
+        />
+      </BlockStack>
+
+      <Divider />
+
+      <Heading level={2}>Qualifying collections</Heading>
+      <BlockStack spacing="base">
+        <Heading level={3}>Sauce collections</Heading>
+        <ResourcePicker
+          resourceType="collection"
+          selected={sauceCollections.map(id => ({id}))}
+          onSelection={(items) => update({ sauceCollections: items.map(i => i.id) })}
+        />
+        <ResourceList
+          resourceType="collection"
+          items={sauceCollections.map(id => ({id}))}
+          renderItem={(it) => <ResourceItem id={it.id} />}
+          emptyState={{title: 'None selected'}}
+        />
+        <Divider />
+        <Heading level={3}>Rub collections</Heading>
+        <ResourcePicker
+          resourceType="collection"
+          selected={rubCollections.map(id => ({id}))}
+          onSelection={(items) => update({ rubCollections: items.map(i => i.id) })}
+        />
+        <ResourceList
+          resourceType="collection"
+          items={rubCollections.map(id => ({id}))}
+          renderItem={(it) => <ResourceItem id={it.id} />}
+          emptyState={{title: 'None selected'}}
+        />
+      </BlockStack>
+
+      <AdminAction action="save" title="Save" primary disabled={isSaving} />
+    </BlockStack>
+  );
+}
+
+function clampPct(v) {
+  const n = Number(v ?? 0);
+  return Math.max(0, Math.min(100, isNaN(n) ? 0 : n));
+}
+function clampInt(v, min, max) {
+  const n = parseInt(v ?? '0', 10);
+  return Math.max(min, Math.min(max, isNaN(n) ? min : n));
+}

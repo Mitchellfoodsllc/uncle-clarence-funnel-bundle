@@ -1,0 +1,35 @@
+{% comment %}
+UCBBQ – PDP Bundle Clerk (Block)
+Renders the “Complete your BBQ kit” carousel and passes settings to JS via data-attrs.
+{% endcomment %}
+
+<div
+  id="ucbbq-bundle-root"
+  data-product-handle="{{ product.handle }}"
+  data-sauce-collections="{{ block.settings.sauce_collections | strip }}"
+  data-rub-collections="{{ block.settings.rub_collections | strip }}"
+  data-accessory-collections="{{ block.settings.accessory_collections | strip }}"
+  data-max-items="{{ block.settings.max_items }}"
+  data-show-prices="{{ block.settings.show_prices }}"
+  data-heading="{{ block.settings.heading | escape }}"
+></div>
+
+{{ 'ucbbq-bundle.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'ucbbq-bundle.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "UCBBQ Bundle Clerk",
+  "target": "section",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Complete your BBQ kit" },
+
+    { "type": "text", "id": "sauce_collections", "label": "Sauce collection handles (comma-separated)", "default": "sauces" },
+    { "type": "text", "id": "rub_collections", "label": "Rub/Seasoning collection handles (comma-separated)", "default": "rubs,seasonings" },
+    { "type": "text", "id": "accessory_collections", "label": "Accessory collections (fallback; comma-separated)", "default": "accessories" },
+
+    { "type": "range", "id": "max_items", "label": "Max items to show", "min": 2, "max": 6, "step": 1, "default": 4 },
+    { "type": "checkbox", "id": "show_prices", "label": "Show prices", "default": true }
+  ]
+}
+{% endschema %}
