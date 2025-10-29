@@ -1,16 +1,14 @@
 {% comment %}
-Uncle Clarence – PDP Bundle Clerk Block (FINAL)
-- Add this block to your Default product template (or collection template for collection mode).
-- Supports DATA SOURCE toggle:
-  • manual (default): picks from block/section products
-  • metafield: JSON list at product/collection scope (namespace/key below)
-  • collection: auto-pull first 6 from the current collection page
-- JS/CSS assets expected:
-  • ucbbq-bundle.css
-  • ucbbq-bundle.js
+UC Bundles – Smart Sales Clerk (Premium Block)
+Data sources:
+• manual – pick products in settings
+• metafield – JSON handles at product/collection scope
+• collection – current collection page (first N)
+• collections_pick – pick 1–3 collections in settings
+Branding: CSS variables via settings
+Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
 {% endcomment %}
 
-{%- comment -%} Resolve metafield JSON if selected {%- endcomment -%}
 {%- liquid
   assign ns = block.settings.metafield_namespace | default: 'bundles'
   assign key = block.settings.metafield_key | default: 'items'
@@ -19,165 +17,144 @@ Uncle Clarence – PDP Bundle Clerk Block (FINAL)
     if block.settings.metafield_scope == 'collection' and collection
       assign mf = collection.metafields[ns][key]
       if mf and mf.value != blank
-        assign metafield_json = mf.value | json
+        assign metafield_json = mf.value
       endif
     elsif block.settings.metafield_scope == 'product' and product
       assign mf = product.metafields[ns][key]
       if mf and mf.value != blank
-        assign metafield_json = mf.value | json
+        assign metafield_json = mf.value
       endif
     endif
   endif
 -%}
 
-{%- comment -%}
-ROOT: keep existing ID for compatibility with previous JS, but now we render
-the full block UI inside it so this is truly plug-and-play.
-{%- endcomment -%}
+{%- comment -%} Branding CSS variables {%- endcomment -%}
+<style>
+  :root {
+    --ucb-primary: {{ block.settings.brand_primary | default: '#433B85' }};
+    --ucb-accent:  {{ block.settings.brand_accent  | default: '#6C9A40' }};
+    --ucb-radius:  {{ block.settings.btn_radius    | default: 12 }}px;
+    --ucb-theme:   {{ block.settings.theme | default: 'light' }};
+  }
+</style>
+
 <div
   id="ucbbq-bundle-root"
   class="ucbbq-bundle"
   data-product-handle="{{ product.handle }}"
-  data-sauce-collections="{{ block.settings.sauce_collections | default: '' | strip }}"
-  data-rub-collections="{{ block.settings.rub_collections | default: '' | strip }}"
-  data-accessory-collections="{{ block.settings.accessory_collections | default: '' | strip }}"
-  data-max-items="{{ block.settings.max_items | default: 6 }}"
   data-source="{{ block.settings.data_source }}"
   data-metafield-json='{{ metafield_json | default: "" }}'
   data-collection-handle="{{ collection.handle | default: '' }}"
+  data-picked-collections="{{ block.settings.custom_collections | join: ',' }}"
   data-default-qty="{{ block.settings.default_qty | default: 1 }}"
   data-show-prices="{{ block.settings.show_prices }}"
   data-show-compare="{{ block.settings.show_compare_at }}"
+  data-max-items="{{ block.settings.max_items | default: 4 }}"
+  data-exclude-current="{{ block.settings.exclude_current }}"
   data-success-text="{{ block.settings.success_text | escape }}"
   data-view-cart-url="{{ block.settings.view_cart_url | escape }}"
+  data-enable-tiers="{{ block.settings.enable_tiers }}"
+  data-tier2-qty="{{ block.settings.tier2_qty | default: 2 }}"
+  data-tier3-qty="{{ block.settings.tier3_qty | default: 3 }}"
+  data-tier2-code="{{ block.settings.tier2_code | default: 'TIER2' | escape }}"
+  data-tier3-code="{{ block.settings.tier3_code | default: 'TIER3' | escape }}"
+  data-tier2-pct="{{ block.settings.tier2_discount | default: 5 }}"
+  data-tier3-pct="{{ block.settings.tier3_discount | default: 10 }}"
 >
-  <div class="ucbbq-bundle__head">
-    <h3 class="ucbbq-bundle__title">{{ block.settings.title | default: 'Bundle & Save' | escape }}</h3>
+  <div class="ucbb-bundle__head">
+    <h3 class="ucbb-bundle__title">{{ block.settings.title | default: 'Bundle & Save' | escape }}</h3>
     {% if block.settings.subtitle != blank %}
-      <p class="ucbbq-bundle__sub">{{ block.settings.subtitle }}</p>
+      <p class="ucbb-bundle__sub">{{ block.settings.subtitle }}</p>
     {% endif %}
-    {%- comment -%} Optional admin hint showing active mode {%- endcomment -%}
-    <small class="ucbbq-bundle__mode">Mode: {{ block.settings.data_source | capitalize }}</small>
+    {% if block.settings.enable_tiers %}
+      <p class="ucbb-bundle__tiers">
+        Buy {{ block.settings.tier2_qty | default: 2 }}+ save {{ block.settings.tier2_discount | default: 5 }}%
+        {% if block.settings.tier3_qty and block.settings.tier3_discount %} •
+        Buy {{ block.settings.tier3_qty | default: 3 }}+ save {{ block.settings.tier3_discount | default: 10 }}%
+        {% endif %}
+      </p>
+    {% endif %}
+    <small class="ucbb-bundle__mode">Mode: {{ block.settings.data_source | capitalize }}</small>
   </div>
 
-  <div class="ucbbq-bundle__carousel">
-    <button class="ucbbq-bundle__nav ucbbq-bundle__nav--prev" aria-label="Previous">‹</button>
-
-    {%- comment -%}
-    TRACK: For MANUAL mode we render up to 6 cards now.
-    For METAFIELD / COLLECTION, JS will hydrate cards from data attributes.
-    {%- endcomment -%}
-    <div class="ucbbq-bundle__track" id="ucbbq-bundle-track-{{ block.id }}">
+  <div class="ucbb-bundle__carousel">
+    <button class="ucbb-bundle__nav ucbb-bundle__nav--prev" aria-label="Previous">‹</button>
+    <div class="ucbb-bundle__track" id="ucbbq-bundle-track-{{ block.id }}">
       {%- if block.settings.data_source == 'manual' -%}
-        {%- assign manual_cards_rendered = 0 -%}
-
-        {%- comment -%} 1) Prefer explicit per-block items (up to 6) {%- endcomment -%}
-        {%- if section.blocks.size > 0 -%}
-          {%- for i in (0..(section.blocks.size-1)) -%}
-            {%- assign b = section.blocks[i] -%}
-            {%- if b.type == 'item' and manual_cards_rendered < 6 -%}
-              {%- assign p = all_products[b.settings.product] -%}
-              {%- if p -%}
-                <article class="ucbbq-bundle__card"
-                         data-product-handle="{{ p.handle }}"
-                         data-default-qty="{{ b.settings.qty | default: 1 }}">
-                  <a href="{{ p.url }}" class="ucbbq-bundle__img">
-                    {%- if p.featured_image -%}
-                      <img loading="lazy" src="{{ p.featured_image | image_url: width: 360 }}" alt="{{ p.title | escape }}">
-                    {%- endif -%}
-                  </a>
-                  <h4 class="ucbbq-bundle__card-title">{{ p.title }}</h4>
-                  {% if block.settings.show_prices %}
-                    <div class="ucbbq-bundle__price">
-                      {% liquid assign v = p.selected_or_first_available_variant %}
-                      <span class="ucbbq-price">{{ v.price | money }}</span>
-                      {% if block.settings.show_compare_at and v.compare_at_price > v.price %}
-                        <s class="ucbbq-compare">{{ v.compare_at_price | money }}</s>
-                      {% endif %}
-                    </div>
-                  {% endif %}
-                  <div class="ucbbq-bundle__qty">
-                    <button class="ucbbq-qty minus" aria-label="minus">-</button>
-                    <input type="number" min="1" step="1" value="{{ b.settings.qty | default: 1 }}">
-                    <button class="ucbbq-qty plus" aria-label="plus">+</button>
-                  </div>
-                </article>
-                {%- assign manual_cards_rendered = manual_cards_rendered | plus: 1 -%}
+        {%- assign cap = block.settings.max_items | default: 4 -%}
+        {%- assign rendered = 0 -%}
+        {%- for p in block.settings.products -%}
+          {%- if rendered >= cap -%}{% break %}{%- endif -%}
+          {%- if block.settings.exclude_current and p.handle == product.handle -%}{% continue %}{%- endif -%}
+          <article class="ucbb-bundle__card" data-product-handle="{{ p.handle }}">
+            <a href="{{ p.url }}" class="ucbb-bundle__img">
+              {%- if p.featured_image -%}
+                {%- assign w = 360 -%}{%- assign h = w | divided_by: p.featured_image.aspect_ratio | round -%}
+                <img loading="lazy" src="{{ p.featured_image | image_url: width: w }}" width="{{ w }}" height="{{ h }}" alt="{{ p.title | escape }}">
               {%- endif -%}
-            {%- endif -%}
-          {%- endfor -%}
-        {%- endif -%}
-
-        {%- comment -%} 2) If no per-block items, fall back to settings.products list {%- endcomment -%}
-        {%- if manual_cards_rendered == 0 and block.settings.products.size > 0 -%}
-          {%- for p in block.settings.products limit: 6 -%}
-            <article class="ucbbq-bundle__card"
-                     data-product-handle="{{ p.handle }}"
-                     data-default-qty="{{ block.settings.default_qty | default: 1 }}">
-              <a href="{{ p.url }}" class="ucbbq-bundle__img">
-                {%- if p.featured_image -%}
-                  <img loading="lazy" src="{{ p.featured_image | image_url: width: 360 }}" alt="{{ p.title | escape }}">
-                {%- endif -%}
-              </a>
-              <h4 class="ucbbq-bundle__card-title">{{ p.title }}</h4>
-              {% if block.settings.show_prices %}
-                <div class="ucbbq-bundle__price">
-                  {% liquid assign v = p.selected_or_first_available_variant %}
-                  <span class="ucbbq-price">{{ v.price | money }}</span>
-                  {% if block.settings.show_compare_at and v.compare_at_price > v.price %}
-                    <s class="ucbbq-compare">{{ v.compare_at_price | money }}</s>
-                  {% endif %}
-                </div>
-              {% endif %}
-              <div class="ucbbq-bundle__qty">
-                <button class="ucbbq-qty minus" aria-label="minus">-</button>
-                <input type="number" min="1" step="1" value="{{ block.settings.default_qty | default: 1 }}">
-                <button class="ucbbq-qty plus" aria-label="plus">+</button>
+            </a>
+            <h4 class="ucbb-bundle__card-title">{{ p.title }}</h4>
+            {% if block.settings.show_prices %}
+              {% liquid assign v = p.selected_or_first_available_variant %}
+              <div class="ucbb-bundle__price">
+                <span class="ucbb-price">{{ v.price | money }}</span>
+                {% if block.settings.show_compare_at and v.compare_at_price > v.price %}
+                  <s class="ucbb-compare">{{ v.compare_at_price | money }}</s>
+                {% endif %}
               </div>
-            </article>
-          {%- endfor -%}
+            {% endif %}
+            <div class="ucbb-bundle__qty">
+              <button class="ucbb-qty minus" aria-label="minus">-</button>
+              <input type="number" min="1" step="1" value="{{ block.settings.default_qty | default: 1 }}">
+              <button class="ucbb-qty plus" aria-label="plus">+</button>
+            </div>
+          </article>
+          {%- assign rendered = rendered | plus: 1 -%}
+        {%- endfor -%}
+        {%- if rendered == 0 -%}
+          <div class="ucbb-bundle__empty">Add products in block settings or switch data source.</div>
         {%- endif -%}
       {%- endif -%}
-
-      {%- comment -%}
-      NOTE: When data_source = metafield or collection, we intentionally do NOT
-      render manual cards here; ucbbq-bundle.js will read the data-* attributes
-      on #ucbbq-bundle-root and inject/hydrate up to 6 items dynamically.
-      {%- endcomment -%}
     </div>
-
-    <button class="ucbbq-bundle__nav ucbbq-bundle__nav--next" aria-label="Next">›</button>
+    <button class="ucbb-bundle__nav ucbb-bundle__nav--next" aria-label="Next">›</button>
   </div>
 
-  <div class="ucbbq-bundle__cta">
-    <button class="ucbbq-bundle__add">{{ block.settings.cta_text | default: 'Add bundle to cart' | escape }}</button>
-    <span class="ucbbq-bundle__status" hidden></span>
+  <div class="ucbb-bundle__cta">
+    <button class="ucbb-bundle__add">{{ block.settings.cta_text | default: 'Add bundle to cart' | escape }}</button>
+    <span class="ucbb-bundle__status" hidden></span>
   </div>
 </div>
 
-{%- comment -%} Assets {%- endcomment -%}
 <link href="{{ 'ucbbq-bundle.css' | asset_url }}" rel="stylesheet">
 <script src="{{ 'ucbbq-bundle.js' | asset_url }}" defer></script>
 
 {% schema %}
 {
-  "name": "Uncle Clarence — Bundle Block",
+  "name": "UC Smart Bundle",
   "target": "section",
   "settings": [
     { "type": "text", "id": "title", "label": "Heading", "default": "Bundle & Save" },
     { "type": "textarea", "id": "subtitle", "label": "Subtitle", "default": "Curated combos, best value." },
 
-    { "type": "select", "id": "data_source", "label": "Data source", "default": "manual",
+    {
+      "type": "select",
+      "id": "data_source",
+      "label": "Data source",
+      "default": "manual",
       "options": [
         { "value": "manual", "label": "Manual (select products below)" },
         { "value": "metafield", "label": "Metafield (JSON list of handles)" },
-        { "value": "collection", "label": "Current collection (first 6 products)" }
+        { "value": "collection", "label": "Current collection (first N)" },
+        { "value": "collections_pick", "label": "Pick collections (auto-pull)" }
       ]
     },
 
-    { "type": "product_list", "id": "products", "label": "Products (manual mode)", "limit": 6 },
+    { "type": "product_list", "id": "products", "label": "Products (manual mode)", "limit": 12 },
 
-    { "type": "radio", "id": "metafield_scope", "label": "Metafield scope",
+    {
+      "type": "radio",
+      "id": "metafield_scope",
+      "label": "Metafield scope",
       "options": [
         { "value": "product", "label": "Product metafield" },
         { "value": "collection", "label": "Collection metafield" }
@@ -187,38 +164,42 @@ the full block UI inside it so this is truly plug-and-play.
     },
     { "type": "text", "id": "metafield_namespace", "label": "Metafield namespace", "default": "bundles" },
     { "type": "text", "id": "metafield_key", "label": "Metafield key", "default": "items" },
+    { "type": "collection_list", "id": "custom_collections", "label": "Collections (auto-pull mode)", "limit": 3 },
 
-    { "type": "number", "id": "default_qty", "label": "Default qty for each", "default": 1, "min": 1, "max": 20 },
+    { "type": "number", "id": "default_qty", "label": "Default qty for each", "default": 1 },
     { "type": "checkbox", "id": "show_prices", "label": "Show prices", "default": true },
     { "type": "checkbox", "id": "show_compare_at", "label": "Show compare-at", "default": true },
+
+    { "type": "number", "id": "max_items", "label": "Max items (UI/JS cap)", "default": 4, "info": "Recommended 4 for carousel layout." },
+    { "type": "checkbox", "id": "exclude_current", "label": "Exclude current product", "default": true },
+
+    { "type": "header", "content": "Tiered bundle promo (optional)" },
+    { "type": "checkbox", "id": "enable_tiers", "label": "Enable tiered discount", "default": false },
+    { "type": "number", "id": "tier2_qty", "label": "Tier 1: minimum items", "default": 2 },
+    { "type": "range", "id": "tier2_discount", "label": "Tier 1 discount (%)", "min": 0, "max": 100, "step": 1, "default": 5 },
+    { "type": "text", "id": "tier2_code", "label": "Tier 1 discount code (must exist)", "default": "TIER2" },
+    { "type": "number", "id": "tier3_qty", "label": "Tier 2: minimum items", "default": 3 },
+    { "type": "range", "id": "tier3_discount", "label": "Tier 2 discount (%)", "min": 0, "max": 100, "step": 1, "default": 10 },
+    { "type": "text", "id": "tier3_code", "label": "Tier 2 discount code (must exist)", "default": "TIER3" },
+
+    { "type": "header", "content": "Branding" },
+    { "type": "color", "id": "brand_primary", "label": "Primary color", "default": "#433B85" },
+    { "type": "color", "id": "brand_accent", "label": "Accent color", "default": "#6C9A40" },
+    { "type": "range", "id": "btn_radius", "label": "Button radius (px)", "min": 0, "max": 24, "step": 1, "default": 12 },
+    {
+      "type": "select",
+      "id": "theme",
+      "label": "Card theme",
+      "default": "light",
+      "options": [
+        { "value": "light", "label": "Light" },
+        { "value": "dark", "label": "Dark" }
+      ]
+    },
+
     { "type": "text", "id": "cta_text", "label": "Add-to-cart CTA", "default": "Add bundle to cart" },
     { "type": "text", "id": "success_text", "label": "Success text", "default": "Bundle added!" },
-    { "type": "url", "id": "view_cart_url", "label": "Cart or Checkout URL", "default": "/cart" }
-
-    {%- comment -%}
-    Optional legacy fields you mentioned earlier (safe to omit if unused):
-    "sauce_collections", "rub_collections", "accessory_collections", "max_items"
-    If you still want them in the editor UI, uncomment the four lines below.
-    {%- endcomment -%}
-    /*
-    ,{ "type": "text", "id": "sauce_collections", "label": "Sauce collections (comma-separated)" }
-    ,{ "type": "text", "id": "rub_collections", "label": "Rub collections (comma-separated)" }
-    ,{ "type": "text", "id": "accessory_collections", "label": "Accessory collections (comma-separated)" }
-    ,{ "type": "number", "id": "max_items", "label": "Max items (UI)", "default": 6, "min": 1, "max": 6 }
-    */
-  ],
-  "blocks": [
-    {
-      "type": "item",
-      "name": "Bundle item (manual mode)",
-      "settings": [
-        { "type": "product", "id": "product", "label": "Product" },
-        { "type": "number", "id": "qty", "label": "Quantity", "default": 1, "min": 1, "max": 20 }
-      ],
-      "limit": 6
-    }
-  ],
-  "max_blocks": 6,
-  "presets": [{ "name": "Uncle Clarence — Bundle Block" }]
+    { "type": "text", "id": "view_cart_url", "label": "Cart or Checkout URL", "default": "/cart" }
+  ]
 }
 {% endschema %}

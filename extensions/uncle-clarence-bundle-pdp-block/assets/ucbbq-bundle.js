@@ -2,279 +2,214 @@
   const root = document.getElementById('ucbbq-bundle-root');
   if (!root) return;
 
-  // ---- Helpers ----
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
   const toMoney = (cents) => (Number(cents) / 100).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
-
-  const fetchJSON = async (url) => {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('Request failed: ' + url);
-    return res.json();
-  };
-
+  const fetchJSON = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(url); return r.json(); };
   const fetchProduct = (handle) => fetchJSON(`/products/${handle}.js`);
   const firstAvailableVariant = (p) => (p?.variants?.find(v => v.available) || p?.variants?.[0] || null);
-  const fetchVariantId = async (handle) => {
-    try {
-      const p = await fetchProduct(handle);
-      const v = firstAvailableVariant(p);
-      return v ? v.id : null;
-    } catch { return null; }
+  const fetchVariantId = async (handle) => { try { const p = await fetchProduct(handle); const v = firstAvailableVariant(p); return v ? v.id : null; } catch { return null; } };
+
+  // Data from Liquid
+  const currentHandle = root.dataset.productHandle || '';
+  const source = root.dataset.source || 'manual';
+  const mfJSONRaw = root.dataset.metafieldJson || '';
+  const collHandle = root.dataset.collectionHandle || '';
+  const pickedCollections = (root.dataset.pickedCollections || '').split(',').map(s => s.trim()).filter(Boolean);
+
+  const maxItems = Math.max(1, parseInt(root.dataset.maxItems || '4', 10));
+  const excludeCurrent = String(root.dataset.excludeCurrent || 'true') === 'true';
+  const defaultQty = Math.max(1, parseInt(root.dataset.defaultQty || '1', 10));
+  const showPrices = String(root.dataset.showPrices) === 'true';
+  const showCompare = String(root.dataset.showCompare) === 'true';
+  const successText = root.dataset.successText || 'Bundle added!';
+  const viewCartUrl = root.dataset.viewCartUrl || '/cart';
+
+  const enableTiers = String(root.dataset.enableTiers || 'false') === 'true';
+  const tier2Qty = parseInt(root.dataset.tier2Qty || '2', 10);
+  const tier3Qty = parseInt(root.dataset.tier3Qty || '3', 10);
+  const tier2Code = (root.dataset.tier2Code || 'TIER2').trim();
+  const tier3Code = (root.dataset.tier3Code || 'TIER3').trim();
+  const tier2Pct = parseInt(root.dataset.tier2Pct || '5', 10);
+  const tier3Pct = parseInt(root.dataset.tier3Pct || '10', 10);
+
+  // DOM
+  const trackEl = $('.ucbb-bundle__track', root);
+  const bundleCTA = $('.ucbb-bundle__add', root);
+  const statusEl = $('.ucbb-bundle__status', root);
+
+  const uniqueByHandle = (arr) => {
+    const seen = new Set();
+    return arr.filter(p => p && p.handle && !seen.has(p.handle) && seen.add(p.handle));
+  };
+  const applyCapAndExclude = (prods) => {
+    let out = prods.filter(Boolean);
+    if (excludeCurrent) out = out.filter(p => p.handle !== currentHandle);
+    out = uniqueByHandle(out);
+    return out.slice(0, maxItems);
   };
 
-  // ---- Legacy bucket vars (your original inputs) ----
-  const productHandle = root.dataset.productHandle || '';
-  const sauceCols = (root.dataset.sauceCollections || '').split(',').map(h => h.trim()).filter(Boolean);
-  const rubCols   = (root.dataset.rubCollections   || '').split(',').map(h => h.trim()).filter(Boolean);
-  const accCols   = (root.dataset.accessoryCollections || '').split(',').map(h => h.trim()).filter(Boolean);
-  const maxItemsLegacy = Math.max(1, parseInt(root.dataset.maxItems || '4', 10));
-
-  // ---- New toggle inputs from Liquid ----
-  const dataSource   = root.dataset.source || 'manual'; // manual | metafield | collection
-  const mfJSONRaw    = root.dataset.metafieldJson || '';
-  const collHandle   = root.dataset.collectionHandle || '';
-  const defaultQty   = Math.max(1, parseInt(root.dataset.defaultQty || '1', 10));
-  const showPrices   = root.dataset.showPrices === 'true';
-  const showCompare  = root.dataset.showCompare === 'true';
-  const successText  = root.dataset.successText || 'Bundle added!';
-  const viewCartUrl  = root.dataset.viewCartUrl || '/cart';
-
-  // Detect UI type: new bundle block (carousel + CTA) vs legacy grid
-  const trackEl = $('.ucbbq-bundle__track', root);
-  const bundleCTA = $('.ucbbq-bundle__add', root);
-  const statusEl = $('.ucbbq-bundle__status', root);
-
-  // ------------------------------------------------------------
-  // RENDERERS
-  // ------------------------------------------------------------
-
-  // Card for new bundle block
   const cardHTML = (p, qty) => {
     const v = firstAvailableVariant(p);
-    const img = p?.images?.[0] || null;
-    const url = p?.url || `/products/${p.handle}`;
+    const img = (p?.images && p.images[0]) || null;
+    const url = `/products/${p.handle}`;
     const priceHTML = showPrices ? `
-      <div class="ucbbq-bundle__price">
-        <span class="ucbbq-price">${toMoney(v ? v.price : 0)}</span>
-        ${showCompare && v && v.compare_at_price > v.price ? `<s class="ucbbq-compare">${toMoney(v.compare_at_price)}</s>` : ``}
+      <div class="ucbb-bundle__price">
+        <span class="ucbb-price">${toMoney(v ? v.price : 0)}</span>
+        ${showCompare && v && v.compare_at_price > v.price ? `<s class="ucbb-compare">${toMoney(v.compare_at_price)}</s>` : ``}
       </div>` : ``;
 
     return `
-      <article class="ucbbq-bundle__card" data-product-handle="${p.handle}">
-        <a class="ucbbq-bundle__img" href="${url}">
-          ${img ? `<img loading="lazy" src="${img}" alt="${p.title}">` : ``}
-        </a>
-        <h4 class="ucbbq-bundle__card-title">${p.title}</h4>
+      <article class="ucbb-bundle__card" data-product-handle="${p.handle}">
+        <a class="ucbb-bundle__img" href="${url}">${img ? `<img loading="lazy" src="${img}" alt="${p.title}">` : ``}</a>
+        <h4 class="ucbb-bundle__card-title">${p.title}</h4>
         ${priceHTML}
-        <div class="ucbbq-bundle__qty">
-          <button class="ucbbq-qty minus" aria-label="minus">-</button>
+        <div class="ucbb-bundle__qty">
+          <button class="ucbb-qty minus" aria-label="minus">-</button>
           <input type="number" min="1" step="1" value="${qty}">
-          <button class="ucbbq-qty plus" aria-label="plus">+</button>
+          <button class="ucbb-qty plus" aria-label="plus">+</button>
         </div>
-      </article>
-    `;
+      </article>`;
   };
 
-  // Legacy “grid” card (your original look, single-item add)
-  const legacyCardHTML = (p) => {
-    const v = firstAvailableVariant(p);
-    const img = (p?.images?.[0] && (p.images[0].src || p.images[0])) || '';
-    const url = `/products/${p.handle}`;
-    return `
-      <div class="ucbbq-card">
-        <a class="ucbbq-img-wrap" href="${url}">
-          ${img ? `<img src="${img}${img.includes('?') ? '&' : '?'}width=360" alt="${p.title}">` : ''}
-        </a>
-        <div class="ucbbq-info">
-          <a class="ucbbq-title-link" href="${url}">${p.title}</a>
-          ${v ? `<div class="ucbbq-price">${toMoney(v.price)}</div>` : ``}
-          ${v ? `<button class="ucbbq-add" data-vid="${v.id}">Add</button>` : ``}
-        </div>
-      </div>
-    `;
-  };
-
-  // Hook up +/- for new bundle cards
   const initQtyControls = () => {
-    $$('.ucbbq-bundle__card', root).forEach(card => {
-      const input = $('input[type="number"]', card);
-      $('.ucbbq-qty.plus', card)?.addEventListener('click', () => {
+    $$('.ucbb-bundle__card', root).forEach(card => {
+      const input = card.querySelector('input[type="number"]');
+      card.querySelector('.ucbb-qty.plus')?.addEventListener('click', () => {
         input.value = String(clamp((parseInt(input.value, 10) || 1) + 1, 1, 999));
       });
-      $('.ucbbq-qty.minus', card)?.addEventListener('click', () => {
+      card.querySelector('.ucbb-qty.minus')?.addEventListener('click', () => {
         input.value = String(clamp((parseInt(input.value, 10) || 1) - 1, 1, 999));
       });
     });
   };
 
-  // Simple carousel nav
   const initCarousel = () => {
-    const prev = $('.ucbbq-bundle__nav--prev', root);
-    const next = $('.ucbbq-bundle__nav--next', root);
     if (!trackEl) return;
+    const prev = $('.ucbb-bundle__nav--prev', root);
+    const next = $('.ucbb-bundle__nav--next', root);
     let scroll = 0;
-    const firstCard = $('.ucbbq-bundle__card', trackEl);
+    const firstCard = $('.ucbb-bundle__card', trackEl);
     const step = firstCard ? Math.ceil(firstCard.getBoundingClientRect().width + 16) : 320;
-    prev?.addEventListener('click', () => {
-      scroll = Math.max(0, scroll - step);
-      trackEl.scrollTo({ left: scroll, behavior: 'smooth' });
-    });
-    next?.addEventListener('click', () => {
-      scroll = Math.min(trackEl.scrollWidth, scroll + step);
-      trackEl.scrollTo({ left: scroll, behavior: 'smooth' });
-    });
+    prev?.addEventListener('click', () => { scroll = Math.max(0, scroll - step); trackEl.scrollTo({ left: scroll, behavior: 'smooth' }); });
+    next?.addEventListener('click', () => { scroll = Math.min(trackEl.scrollWidth, scroll + step); trackEl.scrollTo({ left: scroll, behavior: 'smooth' }); });
   };
 
-  // ------------------------------------------------------------
-  // DATA COLLECTION (items to render)
-  // ------------------------------------------------------------
+  // Data source runners
+  const manualReady = () => source === 'manual' && trackEl && $$('.ucbb-bundle__card', trackEl).length > 0;
 
-  // MANUAL mode: cards already rendered by Liquid; we just read them later for add-to-cart
-  const manualModeReady = () => dataSource === 'manual' && trackEl && $$('.ucbbq-bundle__card', trackEl).length > 0;
-
-  // METAFIELD mode: parse JSON from data attr, then fetch products, render cards
-  const runMetafieldMode = async () => {
-    if (!mfJSONRaw) return;
-    let items;
+  const parseMetafieldItems = (raw) => {
     try {
-      items = JSON.parse(mfJSONRaw).slice(0, 6);
-    } catch { items = []; }
-    if (!items.length || !trackEl) return;
+      const parsed = JSON.parse(raw);
+      const items = (Array.isArray(parsed) ? parsed : []).map(it => {
+        if (typeof it === 'string') return { handle: it, qty: defaultQty };
+        if (typeof it === 'object' && it.handle) return { handle: it.handle, qty: parseInt(it.qty || defaultQty, 10) };
+        return null;
+      }).filter(Boolean);
+      let out = items;
+      if (excludeCurrent) out = out.filter(x => x.handle !== currentHandle);
+      const seen = new Set(); const uniq = [];
+      for (const x of out) { if (seen.has(x.handle)) continue; seen.add(x.handle); uniq.push(x); if (uniq.length >= maxItems) break; }
+      return uniq;
+    } catch { return []; }
+  };
 
-    const products = await Promise.all(items.map(async it => {
-      try { return await fetchProduct(it.handle); } catch { return null; }
-    }));
+  const runMetafield = async () => {
+    if (!mfJSONRaw || !trackEl) return;
+    const items = parseMetafieldItems(mfJSONRaw);
+    const products = await Promise.all(items.map(it => fetchProduct(it.handle).catch(() => null)));
+    const cards = products.map((p, i) => p ? cardHTML(p, clamp(items[i].qty || defaultQty, 1, 999)) : '').join('');
+    trackEl.innerHTML = cards; initQtyControls();
+  };
 
-    const html = products.map((p, i) => p ? cardHTML(p, clamp(parseInt(items[i].qty || defaultQty, 10) || defaultQty, 1, 999)) : '').join('');
-    trackEl.innerHTML = html;
+  const runCollectionPage = async () => {
+    if (!collHandle || !trackEl) return;
+    try {
+      const data = await fetchJSON(`/collections/${collHandle}/products.json?limit=${maxItems}`);
+      let prods = (data.products || []).map(p => ({ handle: p.handle }));
+      if (excludeCurrent) prods = prods.filter(x => x.handle !== currentHandle);
+      prods = prods.slice(0, maxItems);
+      const fulls = await Promise.all(prods.map(x => fetchProduct(x.handle).catch(() => null)));
+      trackEl.innerHTML = fulls.filter(Boolean).map(full => cardHTML(full, defaultQty)).join('');
+      initQtyControls();
+    } catch {}
+  };
+
+  const runCollectionsPick = async () => {
+    if (!pickedCollections.length || !trackEl) return;
+    const fetchCol = async (h) => {
+      try { return await fetchJSON(`/collections/${h}/products.json?limit=${maxItems}`); } catch { return { products: [] }; }
+    };
+    let merged = [];
+    for (const h of pickedCollections) {
+      const data = await fetchCol(h);
+      merged = merged.concat((data.products || []).map(p => ({ handle: p.handle })));
+      if (merged.length >= maxItems * 2) break; // soft guard against huge lists
+    }
+    let uniq = [];
+    const seen = new Set();
+    for (const x of merged) {
+      if (!x || !x.handle) continue;
+      if (excludeCurrent && x.handle === currentHandle) continue;
+      if (seen.has(x.handle)) continue;
+      seen.add(x.handle); uniq.push(x);
+      if (uniq.length >= maxItems) break;
+    }
+    const fulls = await Promise.all(uniq.map(x => fetchProduct(x.handle).catch(() => null)));
+    trackEl.innerHTML = fulls.filter(Boolean).map(full => cardHTML(full, defaultQty)).join('');
     initQtyControls();
   };
 
-  // COLLECTION mode: fetch first 6 from current collection, then render cards
-  const runCollectionMode = async () => {
-    if (!collHandle || !trackEl) return;
-    try {
-      const data = await fetchJSON(`/collections/${collHandle}/products.json?limit=6`);
-      const prods = (data.products || []).slice(0, 6);
-      const cards = await Promise.all(prods.map(async p => {
-        // /products/<handle>.js gives us variants for pricing
-        const full = await fetchProduct(p.handle);
-        return cardHTML(full, defaultQty);
-      }));
-      trackEl.innerHTML = cards.join('');
-      initQtyControls();
-    } catch {
-      // silently ignore
-    }
-  };
-
-  // LEGACY bucket rendering (your original “grid” UX) when no new block structure present
-  const runLegacyGrid = async () => {
-    // Build the legacy wrapper exactly like your code did
-    root.innerHTML = `
-      <div class="ucbbq-wrap">
-        <h3 class="ucbbq-title">Complete the combo</h3>
-        <p class="ucbbq-sub">Add a rub and a sauce to unlock bundle savings.</p>
-        <div class="ucbbq-grid" id="ucbbq-grid"></div>
-      </div>
-    `;
-    const grid = document.getElementById('ucbbq-grid');
-
-    const fetchCollection = async (handle) => {
-      try {
-        const res = await fetch(`/collections/${handle}/products.json?limit=${maxItemsLegacy}`);
-        if (!res.ok) return [];
-        const data = await res.json();
-        return Array.isArray(data.products) ? data.products.slice(0, maxItemsLegacy) : [];
-      } catch {
-        return [];
-      }
-    };
-
-    const buckets = [sauceCols, rubCols, accCols].filter(arr => arr.length);
-    const picked = [];
-    for (const handles of buckets) {
-      for (const h of handles) {
-        if (picked.length >= maxItemsLegacy) break;
-        const prods = await fetchCollection(h);
-        for (const p of prods) {
-          if (picked.length >= maxItemsLegacy) break;
-          if (p.handle !== productHandle) picked.push(p);
-        }
-        if (picked.length >= maxItemsLegacy) break;
-      }
-      if (picked.length >= maxItemsLegacy) break;
-    }
-
-    if (!picked.length) {
-      grid.innerHTML = `
-        <div class="ucbbq-empty">
-          No recommendations yet. Browse our <a href="/collections/sauces">sauces</a> and
-          <a href="/collections/rubs">rubs</a>.
-        </div>
-      `;
-      return;
-    }
-
-    // Fetch /products/<handle>.js to get variants for price & add buttons
-    const fulls = await Promise.all(picked.map(p => fetchProduct(p.handle).catch(() => null)));
-    grid.innerHTML = fulls.map(p => p ? legacyCardHTML(p) : '').join('');
-
-    // Single-item add (legacy behavior)
-    grid.addEventListener('click', async (e) => {
-      const btn = e.target.closest('.ucbbq-add');
-      if (!btn) return;
-      btn.disabled = true;
-      try {
-        await fetch('/cart/add.js', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ id: btn.dataset.vid, quantity: 1 })
-        });
-        btn.textContent = 'Added ✓';
-      } catch {
-        btn.textContent = 'Try again';
-        btn.disabled = false;
-      }
-    });
-  };
-
-  // ------------------------------------------------------------
-  // ADD-TO-CART (bundle, new block)
-  // ------------------------------------------------------------
+  // Add-to-cart
   const buildLinesFromCards = async () => {
-    const cards = $$('.ucbbq-bundle__card', trackEl).slice(0, 6);
+    const cards = $$('.ucbb-bundle__card', trackEl)
+      .filter(c => !!c.dataset.productHandle && (!excludeCurrent || c.dataset.productHandle !== currentHandle))
+      .slice(0, maxItems);
     const lines = [];
     for (const card of cards) {
       const handle = card.dataset.productHandle;
-      const qty = clamp(parseInt($('input[type="number"]', card)?.value || '1', 10), 1, 999);
-      if (!handle) continue;
+      const qty = clamp(parseInt(card.querySelector('input')?.value || '1', 10), 1, 999);
       const vid = await fetchVariantId(handle);
       if (vid) lines.push({ id: vid, quantity: qty });
     }
     return lines;
   };
 
-  const wireBundleCTA = () => {
+  const pickTierCode = (qty) => {
+    if (!enableTiers) return '';
+    if (tier3Code && qty >= tier3Qty) return tier3Code;
+    if (tier2Code && qty >= tier2Qty) return tier2Code;
+    return '';
+  };
+  const withDiscount = (url, code) => {
+    if (!code) return url || '/cart';
+    const u = new URL(url || '/cart', window.location.origin);
+    if (!u.searchParams.get('discount')) u.searchParams.set('discount', code);
+    return u.pathname + '?' + u.searchParams.toString();
+  };
+
+  const wireCTA = () => {
     if (!bundleCTA) return;
     bundleCTA.addEventListener('click', async () => {
       if (statusEl) statusEl.hidden = true;
       try {
-        const lines = await buildLinesFromCards();
-        if (!lines.length) {
+        const items = await buildLinesFromCards();
+        if (!items.length) {
           if (statusEl) { statusEl.textContent = 'No available items to add.'; statusEl.hidden = false; }
           return;
         }
         const res = await fetch('/cart/add.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ items: lines })
+          body: JSON.stringify({ items })
         });
         if (res.ok) {
+          const totalQty = items.reduce((a, l) => a + (parseInt(l.quantity, 10) || 0), 0);
+          const code = pickTierCode(totalQty);
+          const target = withDiscount(viewCartUrl, code);
           if (statusEl) { statusEl.textContent = successText; statusEl.hidden = false; }
-          if (viewCartUrl && viewCartUrl !== '#') window.location.href = viewCartUrl;
+          if (target && target !== '#') window.location.href = target;
         } else {
           if (statusEl) { statusEl.textContent = 'Could not add bundle.'; statusEl.hidden = false; }
         }
@@ -284,31 +219,18 @@
     });
   };
 
-  // ------------------------------------------------------------
-  // INIT
-  // ------------------------------------------------------------
   (async function init() {
-    // If we have the new block structure (track + CTA), use toggle modes
-    if (trackEl && bundleCTA) {
-      initCarousel();
-
-      if (manualModeReady()) {
-        // Liquid already rendered manual cards; just wire qty and CTA
-        initQtyControls();
-      } else if (dataSource === 'metafield') {
-        await runMetafieldMode();
-      } else if (dataSource === 'collection') {
-        await runCollectionMode();
-      } else {
-        // If manual but no cards rendered (edge case), fall back to legacy
-        await runLegacyGrid();
-      }
-
-      wireBundleCTA();
-      return;
+    initCarousel();
+    if (source === 'manual' && manualReady()) {
+      // Liquid rendered cards; just wire qty/CTA
+      initQtyControls();
+    } else if (source === 'metafield') {
+      await runMetafield();
+    } else if (source === 'collection') {
+      await runCollectionPage();
+    } else if (source === 'collections_pick') {
+      await runCollectionsPick();
     }
-
-    // Otherwise, we’re on the old/legacy markup → render legacy grid
-    await runLegacyGrid();
+    wireCTA();
   })();
 })();

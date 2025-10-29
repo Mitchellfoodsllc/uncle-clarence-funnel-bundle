@@ -1,8 +1,16 @@
-.ucbbq-wrap { margin-top: 20px; padding: 16px; border: 1px solid #eee; border-radius: 10px; }
+/* =========================================================
+   UC Bundles – Smart Sales Clerk
+   - Brand variables set via Liquid:
+     --ucb-primary, --ucb-accent, --ucb-radius, --ucb-theme
+   ========================================================= */
+
+/* ---------- Legacy grid (kept for backward compatibility) ---------- */
+.ucbbq-wrap { margin-top: 20px; padding: 16px; border: 1px solid #eee; border-radius: 10px; background: #fafafa; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
 .ucbbq-title { margin: 0 0 6px; font-size: 1.1rem; font-weight: 600; }
 .ucbbq-sub { margin: 0 0 14px; color: #666; }
-.ucbbq-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(180px,1fr)); gap: 12px; }
-.ucbbq-card { background:#fff; border:1px solid #eee; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; }
+.ucbbq-grid { display: grid; grid-template-columns: 1fr; gap: 12px; overflow: visible; }
+.ucbbq-card { background:#fff; border:1px solid #eee; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; transition: transform 0.2s ease; }
+.ucbbq-card:hover { transform: translateY(-4px); }
 .ucbbq-img-wrap { display:block; aspect-ratio:1/1; background:#fafafa; }
 .ucbbq-img-wrap img { width:100%; height:100%; object-fit:cover; }
 .ucbbq-info { padding:10px; display:flex; flex-direction:column; gap:6px; }
@@ -11,35 +19,115 @@
 .ucbbq-add { border:1px solid #333; background:#111; color:#fff; border-radius:8px; padding:8px; cursor:pointer; }
 .ucbbq-add:disabled { opacity:.6; cursor:not-allowed; }
 .ucbbq-empty { color:#666; }
-.ucbbq-wrap {
-  background: #fafafa;
-  border: 1px solid #ddd;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.04);
-}
-.ucbbq-card {
-  transition: transform 0.2s ease;
-}
-.ucbbq-card:hover {
-  transform: translateY(-4px);
-}
-/* Responsive grid layout fix */
-.ucbbq-grid {
-  display: grid;
-  grid-template-columns: 1fr;       /* stack items vertically by default */
-  gap: 12px;
-  overflow: visible;                /* stop sideways scrolling */
-}
 
-/* On wider screens, use 2 columns */
 @media (min-width: 992px) {
-  .ucbbq-grid {
-    grid-template-columns: 1fr 1fr;
-  }
+  .ucbbq-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (min-width: 1200px) {
+  .ucbbq-grid { grid-template-columns: 1fr 1fr 1fr; }
 }
 
-/* Optional: if you ever want 3 products per row on big screens, use this instead */
-@media (min-width: 1200px) {
-  .ucbbq-grid {
-    grid-template-columns: 1fr 1fr 1fr;
-  }
+/* ---------- Premium block styles ---------- */
+
+.ucbb-bundle__head { margin-bottom: 12px; }
+.ucbb-bundle__title { margin: 0 0 4px; font-size: 1.25rem; font-weight: 700; color: var(--ucb-primary, #433B85); }
+.ucbb-bundle__sub { margin: 0 0 6px; color: color-mix(in oklab, var(--ucb-primary, #433B85) 30%, #0000); }
+.ucbb-bundle__tiers { margin: 4px 0 0; font-size: .95rem; color: var(--ucb-accent, #6C9A40); }
+
+.ucbb-bundle__carousel { position: relative; }
+.ucbb-bundle__track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(220px, 260px);
+  gap: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 6px;
 }
+.ucbb-bundle__track::-webkit-scrollbar { height: 8px; }
+.ucbb-bundle__track::-webkit-scrollbar-thumb { background: #d2d2d2; border-radius: 6px; }
+.ucbb-bundle__track::-webkit-scrollbar-track { background: #f3f3f3; }
+
+.ucbb-bundle__card {
+  scroll-snap-align: start;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: var(--ucb-radius, 12px);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.ucbb-bundle__card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,.06); }
+
+.ucbb-bundle__img { display:block; background:#fafafa; aspect-ratio: 1 / 1; }
+.ucbb-bundle__img img { width:100%; height:100%; object-fit:cover; }
+
+.ucbb-bundle__card-title { margin: 10px 12px 4px; font-size: 1rem; line-height: 1.25; font-weight: 600; color:#111; }
+
+.ucbb-bundle__price { margin: 0 12px 8px; display:flex; gap:8px; align-items:center; }
+.ucbb-price { color:#333; font-weight: 600; }
+.ucbb-compare { color:#999; text-decoration: line-through; font-weight: 400; }
+
+.ucbb-bundle__qty {
+  display:flex; align-items:center; gap:8px;
+  margin: 0 12px 12px;
+}
+.ucbb-qty { width:32px; height:32px; border-radius: 8px; border:1px solid #ddd; background:#fff; cursor:pointer; }
+.ucbb-qty:active { transform: translateY(1px); }
+.ucbb-bundle__qty input[type="number"] {
+  width:56px; height:34px; border:1px solid #ddd; border-radius: 8px; padding: 0 8px; text-align:center;
+}
+
+/* Carousel nav */
+.ucbb-bundle__nav {
+  position: absolute; top: 40%; transform: translateY(-50%);
+  width: 36px; height: 36px; border-radius: 50%;
+  border: 1px solid #e0e0e0; background: #fff; color:#333;
+  display:grid; place-items:center; cursor:pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,.06);
+}
+.ucbb-bundle__nav--prev { left: -10px; }
+.ucbb-bundle__nav--next { right: -10px; }
+.ucbb-bundle__nav:hover { background: #f7f7f7; }
+
+/* CTA row */
+.ucbb-bundle__cta { margin-top: 14px; display:flex; align-items:center; gap:12px; }
+.ucbb-bundle__add {
+  border: none;
+  background: var(--ucb-accent, #6C9A40);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: var(--ucb-radius, 12px);
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform .08s ease, box-shadow .2s ease;
+  box-shadow: 0 4px 12px rgba(0,0,0,.08);
+}
+.ucbb-bundle__add:hover { transform: translateY(-1px); }
+.ucbb-bundle__add:active { transform: translateY(0); }
+.ucbb-bundle__status { font-size: .95rem; color:#444; }
+
+/* Compact tweaks for small screens */
+@media (max-width: 480px) {
+  .ucbb-bundle__track { grid-auto-columns: 85%; gap: 12px; }
+  .ucbb-bundle__nav { display:none; }
+}
+
+/* ---------- Theming ---------- */
+:root { --ucb-theme: light; } /* default if Liquid not set */
+
+:root:has(.ucbb-bundle) {
+  /* allow consumers to override in theme if needed */
+}
+
+:root[style*="--ucb-theme: dark"] .ucbb-bundle__card {
+  background: #101114;
+  border-color: #1e2025;
+  color: #fff;
+}
+:root[style*="--ucb-theme: dark"] .ucbb-bundle__img { background: #17181c; }
+:root[style*="--ucb-theme: dark"] .ucbb-bundle__price .ucbb-price { color: #eaeaea; }
+:root[style*="--ucb-theme: dark"] .ucbb-compare { color: #9aa0a6; }
+:root[style*="--ucb-theme: dark"] .ucbb-qty { background:#0f1115; border-color:#2a2f36; color:#eaeaea; }
+:root[style*="--ucb-theme: dark"] .ucbb-bundle__qty input[type="number"] { background:#0f1115; border-color:#2a2f36; color:#eaeaea; }
+:root[style*="--ucb-theme: dark"] .ucbb-bundle__nav { background:#14161a; border-color:#2a2f36; color:#eaeaea; }
