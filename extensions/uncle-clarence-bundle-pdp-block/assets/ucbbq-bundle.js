@@ -2,16 +2,23 @@
   const root = document.getElementById('ucbbq-bundle-root');
   if (!root) return;
 
+  console.log('UC Smart Bundle JS v2.3 — loaded');
+
+  // ---------- Helpers ----------
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
-  const toMoney = (cents) => (Number(cents) / 100).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+  const toMoney = (cents) =>
+    (Number(cents) / 100).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
   const fetchJSON = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(url); return r.json(); };
   const fetchProduct = (handle) => fetchJSON(`/products/${handle}.js`);
   const firstAvailableVariant = (p) => (p?.variants?.find(v => v.available) || p?.variants?.[0] || null);
-  const fetchVariantId = async (handle) => { try { const p = await fetchProduct(handle); const v = firstAvailableVariant(p); return v ? v.id : null; } catch { return null; } };
+  const fetchVariantId = async (handle) => {
+    try { const p = await fetchProduct(handle); const v = firstAvailableVariant(p); return v ? v.id : null; }
+    catch { return null; }
+  };
 
-  // Data from Liquid
+  // ---------- Data from Liquid ----------
   const currentHandle = root.dataset.productHandle || '';
   const source = root.dataset.source || 'manual';
   const mfJSONRaw = root.dataset.metafieldJson || '';
@@ -26,23 +33,35 @@
   const successText = root.dataset.successText || 'Bundle added!';
   const viewCartUrl = root.dataset.viewCartUrl || '/cart';
 
-  const enableTiers = String(root.dataset.enableTiers || 'false') === 'true';
-  const tier2Qty = parseInt(root.dataset.tier2Qty || '2', 10);
-  const tier3Qty = parseInt(root.dataset.tier3Qty || '3', 10);
-  const tier2Code = (root.dataset.tier2Code || 'TIER2').trim();
-  const tier3Code = (root.dataset.tier3Code || 'TIER3').trim();
-  const tier2Pct = parseInt(root.dataset.tier2Pct || '5', 10);
-  const tier3Pct = parseInt(root.dataset.tier3Pct || '10', 10);
+  // Pick collections extras
+  const includeTags = (root.dataset.includeTags || '').split(',').map(s => s.trim()).filter(Boolean);
+  const excludeTags = (root.dataset.excludeTags || '').split(',').map(s => s.trim()).filter(Boolean);
+  const maxPerCollection = Math.max(1, parseInt(root.dataset.maxPerCollection || '4', 10));
 
-  // DOM
+  // Tiers from embedded JSON (supports up to 6)
+  const enableTiers = String(root.dataset.enableTiers || 'false') === 'true';
+  const tierJsonId = root.dataset.tierJsonId || root.dataset.tierJsonID || root.dataset.tierJsonId;
+  let tiers = [];
+  if (enableTiers && tierJsonId) {
+    try {
+      const el = document.getElementById(tierJsonId);
+      if (el) tiers = (JSON.parse(el.textContent) || [])
+        .filter(t => t && t.code && (t.min || 0) > 0 && (t.pct || 0) > 0)
+        .sort((a, b) => a.min - b.min);
+    } catch { tiers = []; }
+  }
+
+  // ---------- DOM ----------
   const trackEl = $('.ucbb-bundle__track', root);
   const bundleCTA = $('.ucbb-bundle__add', root);
   const statusEl = $('.ucbb-bundle__status', root);
 
+  // ---------- Utils ----------
   const uniqueByHandle = (arr) => {
     const seen = new Set();
     return arr.filter(p => p && p.handle && !seen.has(p.handle) && seen.add(p.handle));
   };
+
   const applyCapAndExclude = (prods) => {
     let out = prods.filter(Boolean);
     if (excludeCurrent) out = out.filter(p => p.handle !== currentHandle);
@@ -50,9 +69,37 @@
     return out.slice(0, maxItems);
   };
 
+  function productHasAnyTag(product, tags) {
+    if (!tags?.length) return true;
+    const set = new Set((product?.tags || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean));
+    return tags.some(t => set.has(t.toLowerCase()));
+  }
+
+  function productHasNoExcludedTag(product, tags) {
+    if (!tags?.length) return true;
+    const set = new Set((product?.tags || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean));
+    return !tags.some(t => set.has(t.toLowerCase()));
+  }
+
+  // Visible tiers line from tiers[]
+  function ensureTierLine() {
+    let line = root.querySelector('.ucbb-bundle__tiers');
+    const show = enableTiers && tiers.length;
+    if (!show) { if (line) line.remove(); return; }
+    if (!line) {
+      const head = root.querySelector('.ucbb-bundle__head') || root;
+      line = document.createElement('p');
+      line.className = 'ucbb-bundle__tiers';
+      head.appendChild(line);
+    }
+    const parts = tiers.map(t => `Buy ${t.min}+ save ${t.pct}%`);
+    line.textContent = parts.join(' • ');
+  }
+
+  // ---------- Card renderers ----------
   const cardHTML = (p, qty) => {
     const v = firstAvailableVariant(p);
-    const img = (p?.images && p.images[0]) || null;
+    const img = (p?.images && p.images[0]) || null;       // /products/handle.js returns URLs in images[]
     const url = `/products/${p.handle}`;
     const priceHTML = showPrices ? `
       <div class="ucbb-bundle__price">
@@ -96,7 +143,7 @@
     next?.addEventListener('click', () => { scroll = Math.min(trackEl.scrollWidth, scroll + step); trackEl.scrollTo({ left: scroll, behavior: 'smooth' }); });
   };
 
-  // Data source runners
+  // ---------- Data source runners ----------
   const manualReady = () => source === 'manual' && trackEl && $$('.ucbb-bundle__card', trackEl).length > 0;
 
   const parseMetafieldItems = (raw) => {
@@ -138,30 +185,43 @@
 
   const runCollectionsPick = async () => {
     if (!pickedCollections.length || !trackEl) return;
+
+    // Pull limited items per collection, then filter by tags, then cap overall
     const fetchCol = async (h) => {
-      try { return await fetchJSON(`/collections/${h}/products.json?limit=${maxItems}`); } catch { return { products: [] }; }
+      try { return await fetchJSON(`/collections/${h}/products.json?limit=${maxPerCollection}`); }
+      catch { return { products: [] }; }
     };
+
     let merged = [];
     for (const h of pickedCollections) {
       const data = await fetchCol(h);
       merged = merged.concat((data.products || []).map(p => ({ handle: p.handle })));
-      if (merged.length >= maxItems * 2) break; // soft guard against huge lists
     }
-    let uniq = [];
+
+    // Deduplicate & exclude current
     const seen = new Set();
+    let uniq = [];
     for (const x of merged) {
       if (!x || !x.handle) continue;
       if (excludeCurrent && x.handle === currentHandle) continue;
       if (seen.has(x.handle)) continue;
-      seen.add(x.handle); uniq.push(x);
-      if (uniq.length >= maxItems) break;
+      seen.add(x.handle);
+      uniq.push(x);
+      if (uniq.length >= maxItems * 3) break; // soft guard; we’ll filter next
     }
-    const fulls = await Promise.all(uniq.map(x => fetchProduct(x.handle).catch(() => null)));
-    trackEl.innerHTML = fulls.filter(Boolean).map(full => cardHTML(full, defaultQty)).join('');
+
+    // Fetch full product objects to filter by tags
+    const fulls = (await Promise.all(uniq.map(x => fetchProduct(x.handle).catch(() => null)))).filter(Boolean);
+
+    const filtered = fulls.filter(p =>
+      productHasAnyTag(p, includeTags) && productHasNoExcludedTag(p, excludeTags)
+    ).slice(0, maxItems);
+
+    trackEl.innerHTML = filtered.map(full => cardHTML(full, defaultQty)).join('');
     initQtyControls();
   };
 
-  // Add-to-cart
+  // ---------- Add-to-cart & tiers ----------
   const buildLinesFromCards = async () => {
     const cards = $$('.ucbb-bundle__card', trackEl)
       .filter(c => !!c.dataset.productHandle && (!excludeCurrent || c.dataset.productHandle !== currentHandle))
@@ -177,11 +237,13 @@
   };
 
   const pickTierCode = (qty) => {
-    if (!enableTiers) return '';
-    if (tier3Code && qty >= tier3Qty) return tier3Code;
-    if (tier2Code && qty >= tier2Qty) return tier2Code;
-    return '';
+    if (!enableTiers || !tiers.length) return '';
+    // choose the highest qualifying tier
+    let code = '';
+    for (const t of tiers) { if (qty >= t.min) code = t.code; }
+    return code;
   };
+
   const withDiscount = (url, code) => {
     if (!code) return url || '/cart';
     const u = new URL(url || '/cart', window.location.origin);
@@ -209,20 +271,22 @@
           const code = pickTierCode(totalQty);
           const target = withDiscount(viewCartUrl, code);
           if (statusEl) { statusEl.textContent = successText; statusEl.hidden = false; }
+          window.dispatchEvent(new CustomEvent('ucbundles:added', { detail: { qty: totalQty, items, code } }));
           if (target && target !== '#') window.location.href = target;
         } else {
           if (statusEl) { statusEl.textContent = 'Could not add bundle.'; statusEl.hidden = false; }
         }
-      } catch {
+      } catch (e) {
         if (statusEl) { statusEl.textContent = 'Something went wrong.'; statusEl.hidden = false; }
+        console.error('[UC Bundles] add error:', e);
       }
     });
   };
 
+  // ---------- Init ----------
   (async function init() {
     initCarousel();
     if (source === 'manual' && manualReady()) {
-      // Liquid rendered cards; just wire qty/CTA
       initQtyControls();
     } else if (source === 'metafield') {
       await runMetafield();
@@ -231,6 +295,7 @@
     } else if (source === 'collections_pick') {
       await runCollectionsPick();
     }
+    ensureTierLine();
     wireCTA();
   })();
 })();
