@@ -1,5 +1,5 @@
 /* =========================================================
-   UC Bundles – Smart Sales Clerk (Premium CSS v2)
+   UC Bundles – Smart Sales Clerk (Premium CSS v2.3)
    Brand variables set via Liquid:
    --ucb-primary, --ucb-accent, --ucb-radius, --ucb-theme
    ========================================================= */
@@ -19,7 +19,6 @@
 .ucbbq-add { border:1px solid #333; background:#111; color:#fff; border-radius:8px; padding:8px; cursor:pointer; }
 .ucbbq-add:disabled { opacity:.6; cursor:not-allowed; }
 .ucbbq-empty { color:#666; }
-
 @media (min-width:992px){ .ucbbq-grid{ grid-template-columns:1fr 1fr; } }
 @media (min-width:1200px){ .ucbbq-grid{ grid-template-columns:1fr 1fr 1fr; } }
 
@@ -117,6 +116,43 @@
   .ucbb-bundle__nav{ display:none; }
 }
 
+/* ---------- “Deal bar” (Quick-Deal above description) ---------- */
+.ucbb-dealbar{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:10px 12px; border:1px dashed color-mix(in oklab, var(--ucb-accent,#6C9A40) 40%, #0000);
+  background: color-mix(in oklab, var(--ucb-accent,#6C9A40) 10%, #fff);
+  border-radius: var(--ucb-radius,12px);
+  margin:12px 0 14px;
+}
+.ucbb-dealbar__text{
+  display:flex; flex-wrap:wrap; align-items:center; gap:10px;
+  font-weight:600; color:#1f1f1f;
+}
+.ucbb-badge{
+  display:inline-block; font-size:.85rem; font-weight:700;
+  padding:4px 8px; border-radius:999px;
+  background: var(--ucb-primary,#433B85); color:#fff;
+}
+.ucbb-note{ font-size:.9rem; color:#2a2a2a; }
+
+.ucbb-dealbar__actions{ display:flex; gap:8px; flex-wrap:wrap; }
+.ucbb-dealbar__btn{
+  border:1px solid color-mix(in oklab, var(--ucb-primary,#433B85) 40%, #0000);
+  background:#fff; color:#111; padding:8px 12px; border-radius:10px;
+  cursor:pointer; font-weight:700; transition:transform .08s ease, box-shadow .2s ease, background .2s ease;
+}
+.ucbb-dealbar__btn:hover{ background:#f8f8f8; box-shadow:0 3px 10px rgba(0,0,0,.07); transform:translateY(-1px); }
+.ucbb-dealbar__btn:active{ transform:translateY(0); }
+.ucbb-dealbar__btn--primary{
+  background: var(--ucb-accent,#6C9A40); color:#fff; border-color: transparent;
+}
+.ucbb-dealbar__btn--primary:hover{ filter:brightness(.98); }
+
+@media (max-width:600px){
+  .ucbb-dealbar{ flex-direction:column; align-items:flex-start; }
+  .ucbb-dealbar__actions{ width:100%; }
+}
+
 /* ---------- Theming ---------- */
 :root{ --ucb-theme: light; } /* default if Liquid not set */
 
@@ -133,6 +169,12 @@
 [data-theme="dark"] .ucbb-qty{ background:#0f1115; border-color:#2a2f36; color:#eaeaea; }
 [data-theme="dark"] .ucbb-bundle__qty input[type="number"]{ background:#0f1115; border-color:#2a2f36; color:#eaeaea; }
 [data-theme="dark"] .ucbb-bundle__nav{ background:#14161a; border-color:#2a2f36; color:#eaeaea; }
+[data-theme="dark"] .ucbb-dealbar{
+  border-color: color-mix(in oklab, var(--ucb-accent,#6C9A40) 30%, #000);
+  background: color-mix(in oklab, #0d0f12 75%, var(--ucb-accent,#6C9A40) 25%);
+}
+[data-theme="dark"] .ucbb-dealbar__btn{ background:#0f1115; color:#eaeaea; border-color:#2a2f36; }
+[data-theme="dark"] .ucbb-dealbar__btn--primary{ background: var(--ucb-accent,#6C9A40); color:#0f1115; }
 
 /* ---------- A11y & motion preferences ---------- */
 :root{ --ucb-focus: 2px solid #232323; }
@@ -141,6 +183,7 @@
   .ucbb-bundle__card,
   .ucbbq-card,
   .ucbb-bundle__add,
-  .ucbb-qty { transition:none !important; }
+  .ucbb-qty,
+  .ucbb-dealbar__btn { transition:none !important; }
   .ucbb-bundle__track{ scroll-behavior:auto; }
 }
