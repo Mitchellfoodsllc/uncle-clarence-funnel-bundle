@@ -4,22 +4,19 @@
 
   console.log('UC Smart Bundle JS v2.3 — loaded');
 
-  // ---------- Helpers ----------
+  // --------- Helpers ----------
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
-  const toMoney = (cents) =>
-    (Number(cents) / 100).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+  const toMoney = (cents) => (Number(cents) / 100).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
   const fetchJSON = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(url); return r.json(); };
   const fetchProduct = (handle) => fetchJSON(`/products/${handle}.js`);
   const firstAvailableVariant = (p) => (p?.variants?.find(v => v.available) || p?.variants?.[0] || null);
-  const fetchVariantId = async (handle) => {
-    try { const p = await fetchProduct(handle); const v = firstAvailableVariant(p); return v ? v.id : null; }
-    catch { return null; }
-  };
+  const fetchVariantId = async (handle) => { try { const p = await fetchProduct(handle); const v = firstAvailableVariant(p); return v ? v.id : null; } catch { return null; } };
 
-  // ---------- Data from Liquid ----------
+  // --------- Data from Liquid ----------
   const currentHandle = root.dataset.productHandle || '';
+  const currentVariantId = parseInt(root.dataset.currentVariantId || '', 10);
   const source = root.dataset.source || 'manual';
   const mfJSONRaw = root.dataset.metafieldJson || '';
   const collHandle = root.dataset.collectionHandle || '';
@@ -33,35 +30,24 @@
   const successText = root.dataset.successText || 'Bundle added!';
   const viewCartUrl = root.dataset.viewCartUrl || '/cart';
 
-  // Pick collections extras
-  const includeTags = (root.dataset.includeTags || '').split(',').map(s => s.trim()).filter(Boolean);
-  const excludeTags = (root.dataset.excludeTags || '').split(',').map(s => s.trim()).filter(Boolean);
-  const maxPerCollection = Math.max(1, parseInt(root.dataset.maxPerCollection || '4', 10));
-
-  // Tiers from embedded JSON (supports up to 6)
   const enableTiers = String(root.dataset.enableTiers || 'false') === 'true';
-  const tierJsonId = root.dataset.tierJsonId || root.dataset.tierJsonID || root.dataset.tierJsonId;
-  let tiers = [];
-  if (enableTiers && tierJsonId) {
-    try {
-      const el = document.getElementById(tierJsonId);
-      if (el) tiers = (JSON.parse(el.textContent) || [])
-        .filter(t => t && t.code && (t.min || 0) > 0 && (t.pct || 0) > 0)
-        .sort((a, b) => a.min - b.min);
-    } catch { tiers = []; }
-  }
+  const tier2Qty = parseInt(root.dataset.tier2Qty || '2', 10);
+  const tier3Qty = parseInt(root.dataset.tier3Qty || '3', 10);
+  const tier2Code = (root.dataset.tier2Code || 'TIER2').trim();
+  const tier3Code = (root.dataset.tier3Code || 'TIER3').trim();
+  const tier2Pct = parseInt(root.dataset.tier2Pct || '5', 10);
+  const tier3Pct = parseInt(root.dataset.tier3Pct || '10', 10);
 
-  // ---------- DOM ----------
+  // --------- DOM ----------
   const trackEl = $('.ucbb-bundle__track', root);
   const bundleCTA = $('.ucbb-bundle__add', root);
   const statusEl = $('.ucbb-bundle__status', root);
 
-  // ---------- Utils ----------
+  // --------- Utils ----------
   const uniqueByHandle = (arr) => {
     const seen = new Set();
     return arr.filter(p => p && p.handle && !seen.has(p.handle) && seen.add(p.handle));
   };
-
   const applyCapAndExclude = (prods) => {
     let out = prods.filter(Boolean);
     if (excludeCurrent) out = out.filter(p => p.handle !== currentHandle);
@@ -69,22 +55,10 @@
     return out.slice(0, maxItems);
   };
 
-  function productHasAnyTag(product, tags) {
-    if (!tags?.length) return true;
-    const set = new Set((product?.tags || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean));
-    return tags.some(t => set.has(t.toLowerCase()));
-  }
-
-  function productHasNoExcludedTag(product, tags) {
-    if (!tags?.length) return true;
-    const set = new Set((product?.tags || '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean));
-    return !tags.some(t => set.has(t.toLowerCase()));
-  }
-
-  // Visible tiers line from tiers[]
+  // Tier message ensure (kept for safety)
   function ensureTierLine() {
     let line = root.querySelector('.ucbb-bundle__tiers');
-    const show = enableTiers && tiers.length;
+    const show = enableTiers && ((tier2Qty && tier2Pct) || (tier3Qty && tier3Pct));
     if (!show) { if (line) line.remove(); return; }
     if (!line) {
       const head = root.querySelector('.ucbb-bundle__head') || root;
@@ -92,14 +66,41 @@
       line.className = 'ucbb-bundle__tiers';
       head.appendChild(line);
     }
-    const parts = tiers.map(t => `Buy ${t.min}+ save ${t.pct}%`);
+    const parts = [];
+    if (tier2Qty && tier2Pct) parts.push(`Buy ${tier2Qty}+ save ${tier2Pct}%`);
+    if (tier3Qty && tier3Pct) parts.push(`Buy ${tier3Qty}+ save ${tier3Pct}%`);
     line.textContent = parts.join(' • ');
   }
 
-  // ---------- Card renderers ----------
+  // Quick-deal buttons (2/3 pack for current product)
+  function wireQuickDeals() {
+    if (!currentVariantId) return;
+    root.querySelectorAll('.ucbb-quickdeal-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const qty = Math.max(1, parseInt(btn.dataset.qty || '1', 10));
+        const code = (btn.dataset.code || '').trim();
+        try {
+          const res = await fetch('/cart/add.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ items: [{ id: currentVariantId, quantity: qty }] })
+          });
+          if (res.ok) {
+            const u = new URL(viewCartUrl || '/cart', window.location.origin);
+            if (code && !u.searchParams.get('discount')) u.searchParams.set('discount', code);
+            window.location.href = u.pathname + '?' + u.searchParams.toString();
+          }
+        } catch (e) {
+          console.error('[UC Bundles] quickdeal error', e);
+        }
+      });
+    });
+  }
+
+  // --------- Card renderers ----------
   const cardHTML = (p, qty) => {
     const v = firstAvailableVariant(p);
-    const img = (p?.images && p.images[0]) || null;       // /products/handle.js returns URLs in images[]
+    const img = (p?.images && p.images[0]) || null;
     const url = `/products/${p.handle}`;
     const priceHTML = showPrices ? `
       <div class="ucbb-bundle__price">
@@ -143,7 +144,7 @@
     next?.addEventListener('click', () => { scroll = Math.min(trackEl.scrollWidth, scroll + step); trackEl.scrollTo({ left: scroll, behavior: 'smooth' }); });
   };
 
-  // ---------- Data source runners ----------
+  // --------- Data source runners ----------
   const manualReady = () => source === 'manual' && trackEl && $$('.ucbb-bundle__card', trackEl).length > 0;
 
   const parseMetafieldItems = (raw) => {
@@ -185,43 +186,30 @@
 
   const runCollectionsPick = async () => {
     if (!pickedCollections.length || !trackEl) return;
-
-    // Pull limited items per collection, then filter by tags, then cap overall
     const fetchCol = async (h) => {
-      try { return await fetchJSON(`/collections/${h}/products.json?limit=${maxPerCollection}`); }
-      catch { return { products: [] }; }
+      try { return await fetchJSON(`/collections/${h}/products.json?limit=${maxItems}`); } catch { return { products: [] }; }
     };
-
     let merged = [];
     for (const h of pickedCollections) {
       const data = await fetchCol(h);
       merged = merged.concat((data.products || []).map(p => ({ handle: p.handle })));
+      if (merged.length >= maxItems * 2) break; // soft guard
     }
-
-    // Deduplicate & exclude current
-    const seen = new Set();
     let uniq = [];
+    const seen = new Set();
     for (const x of merged) {
       if (!x || !x.handle) continue;
       if (excludeCurrent && x.handle === currentHandle) continue;
       if (seen.has(x.handle)) continue;
-      seen.add(x.handle);
-      uniq.push(x);
-      if (uniq.length >= maxItems * 3) break; // soft guard; we’ll filter next
+      seen.add(x.handle); uniq.push(x);
+      if (uniq.length >= maxItems) break;
     }
-
-    // Fetch full product objects to filter by tags
-    const fulls = (await Promise.all(uniq.map(x => fetchProduct(x.handle).catch(() => null)))).filter(Boolean);
-
-    const filtered = fulls.filter(p =>
-      productHasAnyTag(p, includeTags) && productHasNoExcludedTag(p, excludeTags)
-    ).slice(0, maxItems);
-
-    trackEl.innerHTML = filtered.map(full => cardHTML(full, defaultQty)).join('');
+    const fulls = await Promise.all(uniq.map(x => fetchProduct(x.handle).catch(() => null)));
+    trackEl.innerHTML = fulls.filter(Boolean).map(full => cardHTML(full, defaultQty)).join('');
     initQtyControls();
   };
 
-  // ---------- Add-to-cart & tiers ----------
+  // --------- Add-to-cart bundle CTA ----------
   const buildLinesFromCards = async () => {
     const cards = $$('.ucbb-bundle__card', trackEl)
       .filter(c => !!c.dataset.productHandle && (!excludeCurrent || c.dataset.productHandle !== currentHandle))
@@ -237,11 +225,10 @@
   };
 
   const pickTierCode = (qty) => {
-    if (!enableTiers || !tiers.length) return '';
-    // choose the highest qualifying tier
-    let code = '';
-    for (const t of tiers) { if (qty >= t.min) code = t.code; }
-    return code;
+    if (!enableTiers) return '';
+    if (tier3Code && qty >= tier3Qty) return tier3Code;
+    if (tier2Code && qty >= tier2Qty) return tier2Code;
+    return '';
   };
 
   const withDiscount = (url, code) => {
@@ -283,7 +270,7 @@
     });
   };
 
-  // ---------- Init ----------
+  // --------- Init ----------
   (async function init() {
     initCarousel();
     if (source === 'manual' && manualReady()) {
@@ -296,6 +283,7 @@
       await runCollectionsPick();
     }
     ensureTierLine();
+    wireQuickDeals();
     wireCTA();
   })();
 })();

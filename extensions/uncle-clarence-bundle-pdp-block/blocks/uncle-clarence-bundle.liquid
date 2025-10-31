@@ -4,7 +4,7 @@ Data sources:
 • manual – pick products in settings
 • metafield – JSON handles at product/collection scope
 • collection – current collection page (first N)
-• collections_pick – pick 1–3 collections in settings
+• collections_pick – pick 1–3 collections in settings (auto-pull)
 Branding: CSS variables via settings
 Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
 {% endcomment %}
@@ -13,6 +13,7 @@ Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
   assign ns = block.settings.metafield_namespace | default: 'bundles'
   assign key = block.settings.metafield_key | default: 'items'
   assign metafield_json = ''
+
   if block.settings.data_source == 'metafield'
     if block.settings.metafield_scope == 'collection' and collection
       assign mf = collection.metafields[ns][key]
@@ -25,6 +26,12 @@ Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
         assign metafield_json = mf.value
       endif
     endif
+  endif
+
+  # Build comma-list of collection handles for auto-pull
+  assign picked_handles = ''
+  if block.settings.custom_collections and block.settings.custom_collections.size > 0
+    assign picked_handles = block.settings.custom_collections | map: 'handle' | join: ','
   endif
 -%}
 
@@ -42,10 +49,11 @@ Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
   id="ucbbq-bundle-root"
   class="ucbbq-bundle"
   data-product-handle="{{ product.handle }}"
+  data-current-variant-id="{{ product.selected_or_first_available_variant.id }}"
   data-source="{{ block.settings.data_source }}"
   data-metafield-json='{{ metafield_json | default: "" }}'
   data-collection-handle="{{ collection.handle | default: '' }}"
-  data-picked-collections="{{ block.settings.custom_collections | join: ',' }}"
+  data-picked-collections="{{ picked_handles }}"
   data-default-qty="{{ block.settings.default_qty | default: 1 }}"
   data-show-prices="{{ block.settings.show_prices }}"
   data-show-compare="{{ block.settings.show_compare_at }}"
@@ -77,6 +85,39 @@ Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
     <small class="ucbb-bundle__mode">Mode: {{ block.settings.data_source | capitalize }}</small>
   </div>
 
+  {%- comment -%} Quick-deal buttons (add 2/3 of CURRENT product + discount) {%- endcomment -%}
+  {%- if block.settings.enable_tiers and product and product.selected_or_first_available_variant -%}
+    <div class="ucbb-deals">
+      <div class="ucbb-deals__line">
+        Buy {{ block.settings.tier2_qty | default: 2 }}+ save {{ block.settings.tier2_discount | default: 5 }}%
+        {%- if block.settings.tier3_qty and block.settings.tier3_discount -%}
+          • Buy {{ block.settings.tier3_qty | default: 3 }}+ save {{ block.settings.tier3_discount | default: 10 }}%
+        {%- endif -%}
+      </div>
+      <div class="ucbb-deals__buttons">
+        <button
+          class="ucbb-quickdeal-btn"
+          data-qty="{{ block.settings.tier2_qty | default: 2 }}"
+          data-code="{{ block.settings.tier2_code | default: 'TIER2' | escape }}"
+          {% unless product.selected_or_first_available_variant.available %}disabled{% endunless %}
+        >
+          Buy {{ block.settings.tier2_qty | default: 2 }} &amp; Save {{ block.settings.tier2_discount | default: 5 }}%
+        </button>
+
+        {%- if block.settings.tier3_qty and block.settings.tier3_discount -%}
+        <button
+          class="ucbb-quickdeal-btn"
+          data-qty="{{ block.settings.tier3_qty | default: 3 }}"
+          data-code="{{ block.settings.tier3_code | default: 'TIER3' | escape }}"
+          {% unless product.selected_or_first_available_variant.available %}disabled{% endunless %}
+        >
+          Buy {{ block.settings.tier3_qty | default: 3 }} &amp; Save {{ block.settings.tier3_discount | default: 10 }}%
+        </button>
+        {%- endif -%}
+      </div>
+    </div>
+  {%- endif -%}
+
   <div class="ucbb-bundle__carousel">
     <button class="ucbb-bundle__nav ucbb-bundle__nav--prev" aria-label="Previous">‹</button>
     <div class="ucbb-bundle__track" id="ucbbq-bundle-track-{{ block.id }}">
@@ -89,8 +130,7 @@ Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
           <article class="ucbb-bundle__card" data-product-handle="{{ p.handle }}">
             <a href="{{ p.url }}" class="ucbb-bundle__img">
               {%- if p.featured_image -%}
-                {%- assign w = 360 -%}
-                {%- assign h = w | divided_by: p.featured_image.aspect_ratio | round -%}
+                {%- assign w = 360 -%}{%- assign h = w | divided_by: p.featured_image.aspect_ratio | round -%}
                 <img loading="lazy" src="{{ p.featured_image | image_url: width: w }}" width="{{ w }}" height="{{ h }}" alt="{{ p.title | escape }}">
               {%- endif -%}
             </a>
@@ -204,4 +244,3 @@ Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
   ]
 }
 {% endschema %}
-
