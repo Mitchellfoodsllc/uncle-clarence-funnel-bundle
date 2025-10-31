@@ -20,21 +20,30 @@ UC Bundles – Smart Sales Clerk (Premium Block)
     endif
   endif
 
-  comment
-    Build tiers array (2–6) only for filled rows
-  endcomment
-  assign tiers = ''
-  assign sep = ''
-  assign idxs = '2,3,4,5,6' | split: ','
-  for i in idxs
-    assign q = block.settings['tier' | append: i | append: '_qty']
-    assign p = block.settings['tier' | append: i | append: '_discount']
-    assign c = block.settings['tier' | append: i | append: '_code']
-    if q and p and c
-      assign tiers = tiers | append: sep | append: '{"min":' | append: q | append: ',"pct":' | append: p | append: ',"code":"' | append: c | append: '"}'
-      assign sep = ','
-    endif
-  endfor
+ comment
+  Build tiers array (2–6) only for filled rows
+endcomment
+assign tiers = ''
+assign sep = ''
+assign idxs = '2,3,4,5,6' | split: ','
+for i in idxs
+  assign kq = 'tier' | append: i | append: '_qty'
+  assign kp = 'tier' | append: i | append: '_discount'
+  assign kc = 'tier' | append: i | append: '_code'
+
+  assign q  = block.settings[kq] | default: 0
+  assign p  = block.settings[kp] | default: 0
+  assign c  = block.settings[kc] | default: ''
+
+  if q != 0 and p != 0 and c != ''
+    assign tiers = tiers
+      | append: sep
+      | append: '{"min":' | append: q
+      | append: ',"pct":'  | append: p
+      | append: ',"code":"'| append: c | append: '"}'
+    assign sep = ','
+  endif
+endfor
 -%}
 
 <style>
