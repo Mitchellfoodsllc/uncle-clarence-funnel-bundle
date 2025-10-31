@@ -1,12 +1,5 @@
 {% comment %}
 UC Bundles – Smart Sales Clerk (Premium Block)
-Data sources:
-• manual – pick products in settings
-• metafield – JSON handles at product/collection scope
-• collection – current collection page (first N)
-• collections_pick – pick 1–3 collections in settings
-Branding: CSS variables via settings
-Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
 {% endcomment %}
 
 {%- liquid
@@ -26,9 +19,24 @@ Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
       endif
     endif
   endif
+
+  comment
+    Build tiers array (2–6) only for filled rows
+  endcomment
+  assign tiers = ''
+  assign sep = ''
+  assign idxs = '2,3,4,5,6' | split: ','
+  for i in idxs
+    assign q = block.settings['tier' | append: i | append: '_qty']
+    assign p = block.settings['tier' | append: i | append: '_discount']
+    assign c = block.settings['tier' | append: i | append: '_code']
+    if q and p and c
+      assign tiers = tiers | append: sep | append: '{"min":' | append: q | append: ',"pct":' | append: p | append: ',"code":"' | append: c | append: '"}'
+      assign sep = ','
+    endif
+  endfor
 -%}
 
-{%- comment -%} Branding CSS variables {%- endcomment -%}
 <style>
   :root {
     --ucb-primary: {{ block.settings.brand_primary | default: '#433B85' }};
@@ -53,26 +61,18 @@ Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
   data-exclude-current="{{ block.settings.exclude_current }}"
   data-success-text="{{ block.settings.success_text | escape }}"
   data-view-cart-url="{{ block.settings.view_cart_url | escape }}"
+
+  data-include-tags="{{ block.settings.include_tags }}"
+  data-exclude-tags="{{ block.settings.exclude_tags }}"
+  data-max-per-collection="{{ block.settings.max_per_collection | default: 4 }}"
+
   data-enable-tiers="{{ block.settings.enable_tiers }}"
-  data-tier2-qty="{{ block.settings.tier2_qty | default: 2 }}"
-  data-tier3-qty="{{ block.settings.tier3_qty | default: 3 }}"
-  data-tier2-code="{{ block.settings.tier2_code | default: 'TIER2' | escape }}"
-  data-tier3-code="{{ block.settings.tier3_code | default: 'TIER3' | escape }}"
-  data-tier2-pct="{{ block.settings.tier2_discount | default: 5 }}"
-  data-tier3-pct="{{ block.settings.tier3_discount | default: 10 }}"
+  data-tier-json-id="ucb-tier-json-{{ block.id }}"
 >
   <div class="ucbb-bundle__head">
     <h3 class="ucbb-bundle__title">{{ block.settings.title | default: 'Bundle & Save' | escape }}</h3>
     {% if block.settings.subtitle != blank %}
       <p class="ucbb-bundle__sub">{{ block.settings.subtitle }}</p>
-    {% endif %}
-    {% if block.settings.enable_tiers %}
-      <p class="ucbb-bundle__tiers">
-        Buy {{ block.settings.tier2_qty | default: 2 }}+ save {{ block.settings.tier2_discount | default: 5 }}%
-        {% if block.settings.tier3_qty and block.settings.tier3_discount %} •
-        Buy {{ block.settings.tier3_qty | default: 3 }}+ save {{ block.settings.tier3_discount | default: 10 }}%
-        {% endif %}
-      </p>
     {% endif %}
     <small class="ucbb-bundle__mode">Mode: {{ block.settings.data_source | capitalize }}</small>
   </div>
@@ -123,6 +123,10 @@ Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
     <button class="ucbb-bundle__add">{{ block.settings.cta_text | default: 'Add bundle to cart' | escape }}</button>
     <span class="ucbb-bundle__status" hidden></span>
   </div>
+
+  {%- if block.settings.enable_tiers and tiers != '' -%}
+    <script type="application/json" id="ucb-tier-json-{{ block.id }}">[{{ tiers }}]</script>
+  {%- endif -%}
 </div>
 
 <link href="{{ 'ucbbq-bundle.css' | asset_url }}" rel="stylesheet">
@@ -136,11 +140,7 @@ Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
     { "type": "text", "id": "title", "label": "Heading", "default": "Bundle & Save" },
     { "type": "textarea", "id": "subtitle", "label": "Subtitle", "default": "Curated combos, best value." },
 
-    {
-      "type": "select",
-      "id": "data_source",
-      "label": "Data source",
-      "default": "manual",
+    { "type": "select", "id": "data_source", "label": "Data source", "default": "manual",
       "options": [
         { "value": "manual", "label": "Manual (select products below)" },
         { "value": "metafield", "label": "Metafield (JSON list of handles)" },
@@ -149,12 +149,9 @@ Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
       ]
     },
 
-    { "type": "product_list", "id": "products", "label": "Products (manual mode)", "limit": 12 },
+    { "type": "product_list", "id": "products", "label": "Products (manual mode)", "limit": 50 },
 
-    {
-      "type": "radio",
-      "id": "metafield_scope",
-      "label": "Metafield scope",
+    { "type": "radio", "id": "metafield_scope", "label": "Metafield scope",
       "options": [
         { "value": "product", "label": "Product metafield" },
         { "value": "collection", "label": "Collection metafield" }
@@ -164,37 +161,51 @@ Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
     },
     { "type": "text", "id": "metafield_namespace", "label": "Metafield namespace", "default": "bundles" },
     { "type": "text", "id": "metafield_key", "label": "Metafield key", "default": "items" },
-    { "type": "collection_list", "id": "custom_collections", "label": "Collections (auto-pull mode)", "limit": 3 },
 
-    { "type": "number", "id": "default_qty", "label": "Default qty for each", "default": 1 },
+    { "type": "collection_list", "id": "custom_collections", "label": "Collections (auto-pull mode)", "limit": 10 },
+
+    { "type": "header", "content": "Auto-pull options" },
+    { "type": "text", "id": "include_tags", "label": "Include tags (comma-separated)", "default": "all", "info": "Use 'all' to include any tag." },
+    { "type": "text", "id": "exclude_tags", "label": "Exclude tags (comma-separated)", "default": "none", "info": "Use 'none' to exclude nothing." },
+    { "type": "number", "id": "max_per_collection", "label": "Max items to sample per collection", "default": 4, "min": 1, "max": 50 },
+
+    { "type": "number", "id": "default_qty", "label": "Default qty for each", "default": 1, "min": 1 },
     { "type": "checkbox", "id": "show_prices", "label": "Show prices", "default": true },
     { "type": "checkbox", "id": "show_compare_at", "label": "Show compare-at", "default": true },
 
-    { "type": "number", "id": "max_items", "label": "Max items (UI/JS cap)", "default": 4, "info": "Recommended 4 for carousel layout." },
+    { "type": "number", "id": "max_items", "label": "Max items (UI/JS cap)", "default": 4, "min": 1, "max": 12, "info": "Recommended 4 for carousel layout." },
     { "type": "checkbox", "id": "exclude_current", "label": "Exclude current product", "default": true },
 
     { "type": "header", "content": "Tiered bundle promo (optional)" },
     { "type": "checkbox", "id": "enable_tiers", "label": "Enable tiered discount", "default": false },
-    { "type": "number", "id": "tier2_qty", "label": "Tier 1: minimum items", "default": 2 },
-    { "type": "range", "id": "tier2_discount", "label": "Tier 1 discount (%)", "min": 0, "max": 100, "step": 1, "default": 5 },
-    { "type": "text", "id": "tier2_code", "label": "Tier 1 discount code (must exist)", "default": "TIER2" },
-    { "type": "number", "id": "tier3_qty", "label": "Tier 2: minimum items", "default": 3 },
-    { "type": "range", "id": "tier3_discount", "label": "Tier 2 discount (%)", "min": 0, "max": 100, "step": 1, "default": 10 },
-    { "type": "text", "id": "tier3_code", "label": "Tier 2 discount code (must exist)", "default": "TIER3" },
+
+    { "type": "number", "id": "tier2_qty", "label": "Tier 1: minimum items", "default": 2, "min": 1 },
+    { "type": "range",  "id": "tier2_discount", "label": "Tier 1 discount (%)", "min": 0, "max": 100, "step": 1, "default": 5 },
+    { "type": "text",   "id": "tier2_code", "label": "Tier 1 discount code (must exist)", "default": "TIER2" },
+
+    { "type": "number", "id": "tier3_qty", "label": "Tier 2: minimum items", "default": 3, "min": 1 },
+    { "type": "range",  "id": "tier3_discount", "label": "Tier 2 discount (%)", "min": 0, "max": 100, "step": 1, "default": 10 },
+    { "type": "text",   "id": "tier3_code", "label": "Tier 2 discount code (must exist)", "default": "TIER3" },
+
+    { "type": "header", "content": "Advanced tiers (optional)" },
+    { "type": "number", "id": "tier4_qty", "label": "Tier 3: minimum items", "default": 0, "min": 0 },
+    { "type": "range",  "id": "tier4_discount", "label": "Tier 3 discount (%)", "min": 0, "max": 100, "step": 1, "default": 0 },
+    { "type": "text",   "id": "tier4_code", "label": "Tier 3 discount code", "default": "TIER4" },
+
+    { "type": "number", "id": "tier5_qty", "label": "Tier 4: minimum items", "default": 0, "min": 0 },
+    { "type": "range",  "id": "tier5_discount", "label": "Tier 4 discount (%)", "min": 0, "max": 100, "step": 1, "default": 0 },
+    { "type": "text",   "id": "tier5_code", "label": "Tier 4 discount code", "default": "TIER5" },
+
+    { "type": "number", "id": "tier6_qty", "label": "Tier 5: minimum items", "default": 0, "min": 0 },
+    { "type": "range",  "id": "tier6_discount", "label": "Tier 5 discount (%)", "min": 0, "max": 100, "step": 1, "default": 0 },
+    { "type": "text",   "id": "tier6_code", "label": "Tier 5 discount code", "default": "TIER6" },
 
     { "type": "header", "content": "Branding" },
     { "type": "color", "id": "brand_primary", "label": "Primary color", "default": "#433B85" },
     { "type": "color", "id": "brand_accent", "label": "Accent color", "default": "#6C9A40" },
     { "type": "range", "id": "btn_radius", "label": "Button radius (px)", "min": 0, "max": 24, "step": 1, "default": 12 },
-    {
-      "type": "select",
-      "id": "theme",
-      "label": "Card theme",
-      "default": "light",
-      "options": [
-        { "value": "light", "label": "Light" },
-        { "value": "dark", "label": "Dark" }
-      ]
+    { "type": "select", "id": "theme", "label": "Card theme", "default": "light",
+      "options": [{ "value": "light", "label": "Light" }, { "value": "dark", "label": "Dark" }]
     },
 
     { "type": "text", "id": "cta_text", "label": "Add-to-cart CTA", "default": "Add bundle to cart" },
