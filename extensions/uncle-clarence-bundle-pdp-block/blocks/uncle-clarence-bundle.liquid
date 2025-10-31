@@ -152,13 +152,37 @@ Assets expected: ucbbq-bundle.css, ucbbq-bundle.js
           </article>
           {%- assign rendered = rendered | plus: 1 -%}
         {%- endfor -%}
-        {%- if rendered == 0 -%}
+ {%- if rendered == 0 -%}
           <div class="ucbb-bundle__empty">Add products in block settings or switch data source.</div>
         {%- endif -%}
       {%- endif -%}
     </div>
     <button class="ucbb-bundle__nav ucbb-bundle__nav--next" aria-label="Next">›</button>
   </div>
+{% if block.settings.enable_tiers %}
+  <div class="ucbb-tierbar" role="group" aria-label="Bundle savings">
+    {% if block.settings.tier2_qty and block.settings.tier2_discount %}
+      <button
+        class="ucbb-tier__btn"
+        data-qty="{{ block.settings.tier2_qty }}"
+        data-code="{{ block.settings.tier2_code | default: 'TIER2' | escape }}"
+        aria-pressed="false"
+      >
+        {{ block.settings.tier2_qty }}× — Save {{ block.settings.tier2_discount }}%
+      </button>
+    {% endif %}
+    {% if block.settings.tier3_qty and block.settings.tier3_discount %}
+      <button
+        class="ucbb-tier__btn"
+        data-qty="{{ block.settings.tier3_qty }}"
+        data-code="{{ block.settings.tier3_code | default: 'TIER3' | escape }}"
+        aria-pressed="false"
+      >
+        {{ block.settings.tier3_qty }}× — Save {{ block.settings.tier3_discount }}%
+      </button>
+    {% endif %}
+  </div>
+{% endif %}
 
   <div class="ucbb-bundle__cta">
     <button class="ucbb-bundle__add">{{ block.settings.cta_text | default: 'Add bundle to cart' | escape }}</button>

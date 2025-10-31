@@ -71,6 +71,43 @@
     if (tier3Qty && tier3Pct) parts.push(`Buy ${tier3Qty}+ save ${tier3Pct}%`);
     line.textContent = parts.join(' • ');
   }
+function wireTierButtons() {
+  const tierBtns = $$('.ucbb-tier__btn', root);
+  if (!tierBtns.length) return;
+
+  // visual state
+  function setActive(btn) {
+    tierBtns.forEach(b => b.classList.toggle('is-active', b === btn));
+    tierBtns.forEach(b => b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'));
+  }
+
+  tierBtns.forEach(btn => {
+    btn.addEventListener('click', async () => {
+      setActive(btn);
+      const qty = clamp(parseInt(btn.dataset.qty || '1', 10), 1, 999);
+      const code = (btn.dataset.code || '').trim();
+
+      try {
+        // add CURRENT product in the chosen quantity
+        const vid = await fetchVariantId(currentHandle);
+        if (!vid) return;
+
+        await fetch('/cart/add.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ items: [{ id: vid, quantity: qty }] })
+        });
+
+        // send customer to cart with discount reliably applied
+        gotoWithDiscount(code, viewCartUrl || '/cart');
+
+      } catch (e) {
+        console.error('[UC Bundles] tier add error:', e);
+        if (statusEl) { statusEl.textContent = 'Could not add items.'; statusEl.hidden = false; }
+      }
+    });
+  });
+}
 
   // Quick-deal buttons (2/3 pack for current product)
   function wireQuickDeals() {
@@ -283,7 +320,8 @@
       await runCollectionsPick();
     }
     ensureTierLine();
-    wireQuickDeals();
+wireTierButtons();
+wireQuickDeals();
     wireCTA();
   })();
 })();
