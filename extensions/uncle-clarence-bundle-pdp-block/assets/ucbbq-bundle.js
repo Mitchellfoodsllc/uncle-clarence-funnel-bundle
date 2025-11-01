@@ -2,29 +2,31 @@
   const root = document.getElementById('ucbbq-bundle-root');
   if (!root) return;
 
-  console.log('UC Smart Bundle JS v2.3.1 — loaded');
+  console.log('UC Smart Bundle JS v2.3.2 — loaded');
 
   // --------- Helpers ----------
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
   const toMoney = (cents) => (Number(cents) / 100).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
-  const fetchJSON = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(url); return r.json(); };
+  const fetchJSON = async (url) => { const r = await fetch(url, { credentials: 'same-origin' }); if (!r.ok) throw new Error(url); return r.json(); };
   const fetchProduct = (handle) => fetchJSON(`/products/${handle}.js`);
   const firstAvailableVariant = (p) => (p?.variants?.find(v => v.available) || p?.variants?.[0] || null);
   const fetchVariantId = async (handle) => { try { const p = await fetchProduct(handle); const v = firstAvailableVariant(p); return v ? v.id : null; } catch { return null; } };
 
-  // Force-apply a discount and navigate back to target
+  // Robust discount applier (respects target)
   const applyDiscountAndGo = (targetUrl, code) => {
-    const fallback = targetUrl || '/cart';
-    if (!code) return fallback;
-    const returnTo = encodeURIComponent(fallback);
-    return `/discount/${encodeURIComponent(code)}?return_to=${returnTo}`;
+    const safeTarget = targetUrl || '/cart';
+    if (code) {
+      const returnTo = encodeURIComponent(safeTarget);
+      return `/discount/${encodeURIComponent(code)}?return_to=${returnTo}`;
+    }
+    return safeTarget;
   };
 
   // --------- Data from Liquid ----------
   const currentHandle = root.dataset.productHandle || '';
-  const currentVariantId = parseInt(root.dataset.currentVariantId || '', 10);
+  const currentVariantId = parseInt(root.dataset.currentVariantId || '', 10) || null;
   const source = root.dataset.source || 'manual';
   const mfJSONRaw = root.dataset.metafieldJson || '';
   const collHandle = root.dataset.collectionHandle || '';
@@ -85,21 +87,28 @@
     const tierBtns = $$('.ucbb-tier__btn', root);
     if (!tierBtns.length) return;
 
-    function setActive(btn) {
+    // visual state
+    const setActive = (btn) => {
       tierBtns.forEach(b => b.classList.toggle('is-active', b === btn));
       tierBtns.forEach(b => b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'));
-    }
+    };
 
+    let busy = false;
     tierBtns.forEach(btn => {
       btn.addEventListener('click', async () => {
+        if (busy) return;
+        busy = true;
         setActive(btn);
+
         const qty = clamp(parseInt(btn.dataset.qty || '1', 10), 1, 999);
         const code = (btn.dataset.code || '').trim();
         const target = (btn.dataset.target === 'checkout') ? '/checkout' : (viewCartUrl || '/cart');
 
         try {
-          const vid = await fetchVariantId(currentHandle);
-          if (!vid) return;
+          // Prefer current variant if provided; otherwise fall back to first available by handle
+          let vid = currentVariantId;
+          if (!vid) vid = await fetchVariantId(currentHandle);
+          if (!vid) throw new Error('No variant id');
 
           await fetch('/cart/add.js', {
             method: 'POST',
@@ -111,6 +120,8 @@
         } catch (e) {
           console.error('[UC Bundles] tier add error:', e);
           if (statusEl) { statusEl.textContent = 'Could not add items.'; statusEl.hidden = false; }
+        } finally {
+          busy = false;
         }
       });
     });
@@ -119,8 +130,12 @@
   // Quick-deal buttons (explicit current variant; supports data-target too)
   function wireQuickDeals() {
     if (!currentVariantId) return;
+    let busy = false;
     root.querySelectorAll('.ucbb-quickdeal-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
+        if (busy) return;
+        busy = true;
+
         const qty = Math.max(1, parseInt(btn.dataset.qty || '1', 10));
         const code = (btn.dataset.code || '').trim();
         const target = (btn.dataset.target === 'checkout') ? '/checkout' : (viewCartUrl || '/cart');
@@ -133,9 +148,13 @@
           });
           if (res.ok) {
             window.location.href = applyDiscountAndGo(target, code);
+          } else {
+            throw new Error('Cart add failed');
           }
         } catch (e) {
           console.error('[UC Bundles] quickdeal error', e);
+        } finally {
+          busy = false;
         }
       });
     });
@@ -225,7 +244,9 @@
       const fulls = await Promise.all(prods.map(x => fetchProduct(x.handle).catch(() => null)));
       trackEl.innerHTML = fulls.filter(Boolean).map(full => cardHTML(full, defaultQty)).join('');
       initQtyControls();
-    } catch {}
+    } catch (e) {
+      console.warn('[UC Bundles] collection fetch failed', e);
+    }
   };
 
   const runCollectionsPick = async () => {
@@ -237,7 +258,7 @@
     for (const h of pickedCollections) {
       const data = await fetchCol(h);
       merged = merged.concat((data.products || []).map(p => ({ handle: p.handle })));
-      if (merged.length >= maxItems * 2) break;
+      if (merged.length >= maxItems * 2) break; // small guard
     }
     let uniq = [];
     const seen = new Set();
@@ -277,13 +298,17 @@
 
   const wireCTA = () => {
     if (!bundleCTA) return;
+    let busy = false;
     bundleCTA.addEventListener('click', async () => {
+      if (busy) return;
+      busy = true;
+
       if (statusEl) statusEl.hidden = true;
       try {
         const items = await buildLinesFromCards();
         if (!items.length) {
           if (statusEl) { statusEl.textContent = 'No available items to add.'; statusEl.hidden = false; }
-          return;
+          busy = false; return;
         }
         const res = await fetch('/cart/add.js', {
           method: 'POST',
@@ -304,25 +329,31 @@
       } catch (e) {
         if (statusEl) { statusEl.textContent = 'Something went wrong.'; statusEl.hidden = false; }
         console.error('[UC Bundles] add error:', e);
+      } finally {
+        busy = false;
       }
     });
   };
 
   // --------- Init ----------
   (async function init() {
-    initCarousel();
-    if (source === 'manual' && manualReady()) {
-      initQtyControls();
-    } else if (source === 'metafield') {
-      await runMetafield();
-    } else if (source === 'collection') {
-      await runCollectionPage();
-    } else if (source === 'collections_pick') {
-      await runCollectionsPick();
+    try {
+      initCarousel();
+      if (source === 'manual' && manualReady()) {
+        initQtyControls();
+      } else if (source === 'metafield') {
+        await runMetafield();
+      } else if (source === 'collection') {
+        await runCollectionPage();
+      } else if (source === 'collections_pick') {
+        await runCollectionsPick();
+      }
+      ensureTierLine();
+      wireTierButtons();
+      wireQuickDeals();
+      wireCTA();
+    } catch (e) {
+      console.error('[UC Bundles] init error:', e);
     }
-    ensureTierLine();
-    wireTierButtons();     // supports cart + checkout pills
-    wireQuickDeals();      // supports cart + checkout quick buttons
-    wireCTA();
   })();
 })();
