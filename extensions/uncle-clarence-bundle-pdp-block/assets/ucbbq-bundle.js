@@ -2,7 +2,7 @@
   const root = document.getElementById('ucbbq-bundle-root');
   if (!root) return;
 
-  console.log('UC Smart Bundle JS v2.3 — loaded');
+  console.log('UC Smart Bundle JS v2.3.1 — loaded');
 
   // --------- Helpers ----------
   const $ = (s, el = document) => el.querySelector(s);
@@ -13,6 +13,14 @@
   const fetchProduct = (handle) => fetchJSON(`/products/${handle}.js`);
   const firstAvailableVariant = (p) => (p?.variants?.find(v => v.available) || p?.variants?.[0] || null);
   const fetchVariantId = async (handle) => { try { const p = await fetchProduct(handle); const v = firstAvailableVariant(p); return v ? v.id : null; } catch { return null; } };
+
+  // Force-apply a discount and navigate back to target
+  const applyDiscountAndGo = (targetUrl, code) => {
+    const fallback = targetUrl || '/cart';
+    if (!code) return fallback;
+    const returnTo = encodeURIComponent(fallback);
+    return `/discount/${encodeURIComponent(code)}?return_to=${returnTo}`;
+  };
 
   // --------- Data from Liquid ----------
   const currentHandle = root.dataset.productHandle || '';
@@ -71,51 +79,52 @@
     if (tier3Qty && tier3Pct) parts.push(`Buy ${tier3Qty}+ save ${tier3Pct}%`);
     line.textContent = parts.join(' • ');
   }
-function wireTierButtons() {
-  const tierBtns = $$('.ucbb-tier__btn', root);
-  if (!tierBtns.length) return;
 
-  // visual state
-  function setActive(btn) {
-    tierBtns.forEach(b => b.classList.toggle('is-active', b === btn));
-    tierBtns.forEach(b => b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'));
+  // Tier buttons (cart by default; checkout when data-target="checkout")
+  function wireTierButtons() {
+    const tierBtns = $$('.ucbb-tier__btn', root);
+    if (!tierBtns.length) return;
+
+    function setActive(btn) {
+      tierBtns.forEach(b => b.classList.toggle('is-active', b === btn));
+      tierBtns.forEach(b => b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'));
+    }
+
+    tierBtns.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        setActive(btn);
+        const qty = clamp(parseInt(btn.dataset.qty || '1', 10), 1, 999);
+        const code = (btn.dataset.code || '').trim();
+        const target = (btn.dataset.target === 'checkout') ? '/checkout' : (viewCartUrl || '/cart');
+
+        try {
+          const vid = await fetchVariantId(currentHandle);
+          if (!vid) return;
+
+          await fetch('/cart/add.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ items: [{ id: vid, quantity: qty }] })
+          });
+
+          window.location.href = applyDiscountAndGo(target, code);
+        } catch (e) {
+          console.error('[UC Bundles] tier add error:', e);
+          if (statusEl) { statusEl.textContent = 'Could not add items.'; statusEl.hidden = false; }
+        }
+      });
+    });
   }
 
-  tierBtns.forEach(btn => {
-    btn.addEventListener('click', async () => {
-      setActive(btn);
-      const qty = clamp(parseInt(btn.dataset.qty || '1', 10), 1, 999);
-      const code = (btn.dataset.code || '').trim();
-
-      try {
-        // add CURRENT product in the chosen quantity
-        const vid = await fetchVariantId(currentHandle);
-        if (!vid) return;
-
-        await fetch('/cart/add.js', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ items: [{ id: vid, quantity: qty }] })
-        });
-
-        // send customer to cart with discount reliably applied
-        gotoWithDiscount(code, viewCartUrl || '/cart');
-
-      } catch (e) {
-        console.error('[UC Bundles] tier add error:', e);
-        if (statusEl) { statusEl.textContent = 'Could not add items.'; statusEl.hidden = false; }
-      }
-    });
-  });
-}
-
-  // Quick-deal buttons (2/3 pack for current product)
+  // Quick-deal buttons (explicit current variant; supports data-target too)
   function wireQuickDeals() {
     if (!currentVariantId) return;
     root.querySelectorAll('.ucbb-quickdeal-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const qty = Math.max(1, parseInt(btn.dataset.qty || '1', 10));
         const code = (btn.dataset.code || '').trim();
+        const target = (btn.dataset.target === 'checkout') ? '/checkout' : (viewCartUrl || '/cart');
+
         try {
           const res = await fetch('/cart/add.js', {
             method: 'POST',
@@ -123,9 +132,7 @@ function wireTierButtons() {
             body: JSON.stringify({ items: [{ id: currentVariantId, quantity: qty }] })
           });
           if (res.ok) {
-            const u = new URL(viewCartUrl || '/cart', window.location.origin);
-            if (code && !u.searchParams.get('discount')) u.searchParams.set('discount', code);
-            window.location.href = u.pathname + '?' + u.searchParams.toString();
+            window.location.href = applyDiscountAndGo(target, code);
           }
         } catch (e) {
           console.error('[UC Bundles] quickdeal error', e);
@@ -230,7 +237,7 @@ function wireTierButtons() {
     for (const h of pickedCollections) {
       const data = await fetchCol(h);
       merged = merged.concat((data.products || []).map(p => ({ handle: p.handle })));
-      if (merged.length >= maxItems * 2) break; // soft guard
+      if (merged.length >= maxItems * 2) break;
     }
     let uniq = [];
     const seen = new Set();
@@ -268,13 +275,6 @@ function wireTierButtons() {
     return '';
   };
 
-  const withDiscount = (url, code) => {
-    if (!code) return url || '/cart';
-    const u = new URL(url || '/cart', window.location.origin);
-    if (!u.searchParams.get('discount')) u.searchParams.set('discount', code);
-    return u.pathname + '?' + u.searchParams.toString();
-  };
-
   const wireCTA = () => {
     if (!bundleCTA) return;
     bundleCTA.addEventListener('click', async () => {
@@ -293,7 +293,8 @@ function wireTierButtons() {
         if (res.ok) {
           const totalQty = items.reduce((a, l) => a + (parseInt(l.quantity, 10) || 0), 0);
           const code = pickTierCode(totalQty);
-          const target = withDiscount(viewCartUrl, code);
+          const target = applyDiscountAndGo(viewCartUrl, code);
+
           if (statusEl) { statusEl.textContent = successText; statusEl.hidden = false; }
           window.dispatchEvent(new CustomEvent('ucbundles:added', { detail: { qty: totalQty, items, code } }));
           if (target && target !== '#') window.location.href = target;
@@ -320,8 +321,8 @@ function wireTierButtons() {
       await runCollectionsPick();
     }
     ensureTierLine();
-wireTierButtons();
-wireQuickDeals();
+    wireTierButtons();     // supports cart + checkout pills
+    wireQuickDeals();      // supports cart + checkout quick buttons
     wireCTA();
   })();
 })();
